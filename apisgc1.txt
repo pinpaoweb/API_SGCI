@@ -1,0 +1,2913 @@
+
+este es el codigo corrigelo authController.js (const bcrypt = require('bcryptjs');
+const Joi = require('joi');
+const User = require('../models/user');
+const jwt = require('jsonwebtoken');
+
+// Esquemas de validación
+const registerSchema = Joi.object({
+  username: Joi.string().min(3).max(50).required(),
+  email: Joi.string().email().required(),
+  password: Joi.string().min(6).required()
+});
+
+const loginSchema = Joi.object({
+  email: Joi.string().email().required(),
+  password: Joi.string().min(6).required()
+});
+
+const updateUserSchema = Joi.object({
+  username: Joi.string().min(3).max(50),
+  email: Joi.string().email(),
+  password: Joi.string().min(6)
+});
+
+// Controladores
+exports.register = async (req, res) => {
+  const { error } = registerSchema.validate(req.body);
+  if (error) return res.status(400).json({ error: error.details[0].message });
+
+  const { username, email, password } = req.body;
+
+  try {
+    let user = await User.findOne({ email });
+    if (user) return res.status(400).json({ error: 'El usuario ya existe' });
+
+    user = new User({
+      username,
+      email,
+      password: await bcrypt.hash(password, 10)
+    });
+
+    await user.save();
+    res.status(201).json({ mensaje: 'Usuario registrado exitosamente' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+};
+
+exports.login = async (req, res) => {
+  const { error } = loginSchema.validate(req.body);
+  if (error) return res.status(400).json({ error: error.details[0].message });
+
+  const { email, password } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(400).json({ error: 'Credenciales inválidas' });
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(400).json({ error: 'Credenciales inválidas' });
+
+    const token = jwt.sign({ userId: user._id }, 'your_jwt_secret', { expiresIn: '1h' });
+
+    res.status(200).json({ mensaje: 'Inicio de sesión exitoso', token });
+  } catch (error) {
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+};
+
+exports.updateUser = async (req, res) => {
+  const { error } = updateUserSchema.validate(req.body);
+  if (error) return res.status(400).json({ error: error.details[0].message });
+
+  const updates = req.body;
+
+  try {
+    if (updates.password) {
+      updates.password = await bcrypt.hash(updates.password, 10);
+    }
+
+    const user = await User.findByIdAndUpdate(req.user._id, updates, { new: true });
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    res.status(200).json({ mensaje: 'Datos del usuario actualizados exitosamente', user });
+  } catch (error) {
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+};
+) para http://localhost:5000/api/auth/update
+ChatGPT
+El código proporcionado parece estar bien estructurado para manejar las funciones de registro, inicio de sesión y actualización de usuarios utilizando Node.js con Express y MongoDB (asumiendo Mongoose para interactuar con la base de datos).
+
+Sin embargo, noto que al final del código has mencionado una URL (http://localhost:5000/api/auth/update), que parece ser el endpoint al cual deseas asociar estas funciones en tu servidor. Aquí hay algunos puntos clave que podrías revisar o ajustar:
+
+Endpoint en Express: Asegúrate de que en tu archivo de rutas en Express (routes/auth.js o similar), tengas definidos estos endpoints correctamente y que estén asociados a las funciones correspondientes (register, login, updateUser) en authController.js.
+
+JWT Secret: En la función login, estás utilizando un secreto 'your_jwt_secret' para firmar el token JWT. Es importante que uses un secreto seguro y lo mantengas fuera del código fuente. Puedes configurarlo como una variable de entorno.
+
+Validación de Esquemas: Utilizas Joi para validar los datos de entrada (req.body). Es una práctica sólida para asegurar que los datos recibidos cumplan con ciertos criterios antes de procesarlos.
+
+Manejo de Errores: Estás manejando errores de manera adecuada, devolviendo respuestas HTTP apropiadas con códigos de estado y mensajes de error informativos.
+
+Para conectar este controlador a tu aplicación Express, necesitarás asegurarte de que:
+
+Has importado correctamente authController.js en tu archivo de rutas (routes/auth.js).
+Has definido los métodos HTTP (POST para register y login, y PUT/PATCH para updateUser) en tus rutas.
+Estás utilizando middleware para verificar y decodificar el token JWT en las rutas que requieren autenticación (updateUser en este caso).
+Si tienes algún otro detalle específico que quieras ajustar o preguntar sobre el código, ¡hazmelo saber!
+
+{
+    "mensaje": "Token inválido o expirado"
+}
+ChatGPT
+Parece que estás solicitando cómo manejar un mensaje de error específico relacionado con un token inválido o expirado en tu aplicación. Este tipo de mensaje generalmente se maneja en el middleware de autenticación cuando se verifica el token JWT antes de permitir el acceso a rutas protegidas.
+
+Aquí te muestro cómo podrías manejar este tipo de error en tu código:
+
+javascript
+Copiar código
+// Middleware para verificar el token JWT
+const jwt = require('jsonwebtoken');
+
+const verifyToken = (req, res, next) => {
+  const token = req.headers.authorization;  // Suponiendo que el token se envía en el header Authorization
+
+  if (!token) {
+    return res.status(401).json({ mensaje: 'Acceso denegado. Token no proporcionado.' });
+  }
+
+  try {
+    const decoded = jwt.verify(token, 'tu_secreto_jwt');  // Reemplaza 'tu_secreto_jwt' con tu secreto real
+
+    // Añade el usuario decodificado a la solicitud para su uso posterior en rutas protegidas
+    req.user = decoded;
+
+    next();  // Pasa al siguiente middleware o función controladora
+  } catch (error) {
+    return res.status(401).json({ mensaje: 'Token inválido o expirado.' });
+  }
+};
+
+module.exports = verifyToken;
+En este ejemplo:
+
+Middleware verifyToken: Este middleware verifica si el token JWT está presente en el encabezado Authorization de la solicitud.
+Decodificación del Token: Utiliza jwt.verify para decodificar el token y asegurarse de que sea válido. Si no es válido (por ejemplo, expiró o tiene una firma inválida), captura el error y devuelve un mensaje de error adecuado.
+Manejo de Errores: Si no se proporciona un token o el token es inválido, se devuelve un mensaje de error con el estado HTTP 401 (No autorizado).
+Para usar este middleware en tus rutas protegidas, simplemente importa y úsalo antes de la función controladora que maneja la solicitud. Por ejemplo:
+
+javascript
+Copiar código
+const express = require('express');
+const router = express.Router();
+const verifyToken = require('../middlewares/verifyToken');
+const authController = require('../controllers/authController');
+
+// Rutas protegidas que requieren autenticación
+router.put('/update', verifyToken, authController.updateUser);
+
+module.exports = router;
+En este caso, el middleware verifyToken se ejecutará antes de authController.updateUser, asegurando que el usuario esté autenticado antes de permitir que se actualicen los datos del usuario.
+
+Espero que esto aclare cómo manejar el mensaje de "Token inválido o expirado" en tu aplicación. Si tienes más preguntas o necesitas más ayuda, no dudes en preguntar.
+
+este es authMiddleware.js (const jwt = require('jsonwebtoken');
+const User = require('../models/user');
+
+const authMiddleware = async (req, res, next) => {
+  try {
+    const authHeader = req.header('Authorization');
+    if (!authHeader) {
+      return res.status(401).json({ mensaje: 'Acceso denegado, no hay token proporcionado' });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    console.log(Token recibido: ${token});
+    
+    const decoded = jwt.verify(token, 'your_jwt_secret');
+    console.log(Token decodificado: ${JSON.stringify(decoded)});
+
+    const user = await User.findById(decoded.userId);
+    if (!user) {
+      return res.status(401).json({ mensaje: 'Usuario no encontrado' });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error(Error en la autenticación: ${error.message});
+    res.status(401).json({ mensaje: 'Token inválido o expirado' });
+  }
+};
+
+module.exports = authMiddleware; )
+ChatGPT
+El middleware authMiddleware.js que has proporcionado está diseñado para verificar y decodificar un token JWT enviado en el encabezado Authorization de las solicitudes HTTP. Aquí tienes algunos puntos clave sobre cómo funciona y algunas sugerencias para mejorarlo:
+
+Verificación del Encabezado de Autorización: El middleware verifica si existe un encabezado Authorization en la solicitud. Si no hay uno, devuelve un mensaje de error de acceso denegado con el estado HTTP 401.
+
+Extracción y Decodificación del Token: Extrae el token de autorización del encabezado, eliminando el prefijo 'Bearer '. Luego, utiliza jwt.verify para decodificar el token y obtener la información codificada en él (en este caso, parece que esperas un campo userId en el token).
+
+Búsqueda del Usuario: Utiliza el userId decodificado para buscar el usuario en la base de datos. Si el usuario no se encuentra, devuelve un mensaje de error indicando que el usuario no está autorizado.
+
+Asignación a req.user: Si el token y el usuario son válidos, asigna el objeto de usuario a req.user, lo cual es útil para las funciones controladoras posteriores que necesiten acceder a los datos del usuario autenticado.
+
+Manejo de Errores: Captura y maneja cualquier error que pueda ocurrir durante la verificación del token o la búsqueda del usuario, devolviendo un mensaje de error adecuado en caso de que el token sea inválido o haya expirado.
+
+Aquí te dejo un ejemplo de cómo podrías usar este middleware en tus rutas protegidas:
+
+javascript
+Copiar código
+const express = require('express');
+const router = express.Router();
+const authMiddleware = require('../middlewares/authMiddleware');
+const authController = require('../controllers/authController');
+
+// Ruta protegida que requiere autenticación
+router.put('/update', authMiddleware, authController.updateUser);
+
+module.exports = router;
+En este ejemplo:
+
+authMiddleware se utiliza como middleware antes de la función controladora authController.updateUser.
+Asegúrate de configurar correctamente el secreto JWT ('your_jwt_secret') en la llamada a jwt.verify. Es importante mantener este secreto seguro y preferiblemente fuera del código fuente (por ejemplo, utilizando variables de entorno).
+Considera manejar de manera más específica los errores que puedan surgir durante la autenticación para proporcionar mensajes de error más descriptivos o posiblemente registrarlos para diagnóstico.
+Si necesitas más ayuda o tienes alguna pregunta adicional sobre este middleware o cualquier otro aspecto de tu aplicación, no dudes en preguntar. Estoy aquí para ayudar.
+
+ChatGPT
+Parece que tu mensaje está vacío. ¿Hay algo más en lo que pueda asistirte o alguna pregunta específica que tengas? Estoy aquí para ayudar con cualquier consulta que tengas sobre desarrollo web, programación, o cualquier otro tema que te interese. ¡No dudes en preguntar!
+
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Error</title>
+</head>
+
+<body>
+    <pre>Cannot POST /api/auth/protected</pre>
+</body>
+
+</html> esto tiene server.js (console.log('hola mundo soy pedro');
+const express = require('express');
+const conectarDB = require('./config/db');
+const authRoutes = require('./routes/authRoutes'); // Asegúrate de que el nombre del archivo es correcto
+
+// Conectar a la base de datos
+conectarDB();
+
+// Crear una instancia de Express
+const app = express();
+
+// Middleware para analizar el cuerpo de las solicitudes
+app.use(express.json());
+
+// Usar las rutas de autenticación
+app.use('/api/auth',  authRoutes);
+
+// Definir una ruta de prueba
+app.get('/', (req, res) => {
+  res.send('Hola mundo: ADSO 2024');
+});
+
+// Configurar el puerto en el que escuchará el servidor
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(Servidor corriendo en el puerto ${PORT});
+});
+)
+ChatGPT
+Parece que estás recibiendo un error al intentar hacer una solicitud POST a /api/auth/protected. Aquí hay algunos pasos para diagnosticar y solucionar el problema:
+
+Verifica las Rutas: Asegúrate de que la ruta /api/auth/protected está definida en tu archivo de rutas authRoutes.
+
+Verifica los Métodos HTTP: Asegúrate de que la ruta /api/auth/protected acepta solicitudes POST.
+
+Middleware y Controladores: Verifica que el middleware y los controladores están configurados correctamente para manejar las solicitudes POST.
+
+Aquí hay un ejemplo de cómo podría verse authRoutes.js para manejar la ruta /api/auth/protected con un método POST:
+
+javascript
+Copiar código
+const express = require('express');
+const router = express.Router();
+const authMiddleware = require('../middlewares/authMiddleware');
+const authController = require('../controllers/authController');
+
+// Definir la ruta protegida que acepta solicitudes POST
+router.post('/protected', authMiddleware, (req, res) => {
+  res.status(200).json({ mensaje: 'Acceso permitido a la ruta protegida' });
+});
+
+module.exports = router;
+Asegúrate de que authMiddleware y authController están correctamente definidos y exportados.
+
+En tu archivo server.js, ya tienes configurado el uso de authRoutes, así que no debería haber problema allí.
+
+javascript
+Copiar código
+console.log('hola mundo soy pedro');
+const express = require('express');
+const conectarDB = require('./config/db');
+const authRoutes = require('./routes/authRoutes');
+
+// Conectar a la base de datos
+conectarDB();
+
+// Crear una instancia de Express
+const app = express();
+
+// Middleware para analizar el cuerpo de las solicitudes
+app.use(express.json());
+
+// Usar las rutas de autenticación
+app.use('/api/auth', authRoutes);
+
+// Definir una ruta de prueba
+app.get('/', (req, res) => {
+  res.send('Hola mundo: ADSO 2024');
+});
+
+// Configurar el puerto en el que escuchará el servidor
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en el puerto ${PORT}`);
+});
+Revisa también lo siguiente:
+
+Verifica la URL: Asegúrate de que estás haciendo la solicitud a la URL correcta (http://localhost:5000/api/auth/protected).
+
+Herramienta de Pruebas: Si estás usando una herramienta como Postman o cURL, asegúrate de que estás haciendo la solicitud POST correctamente y de que estás enviando los encabezados necesarios (por ejemplo, el encabezado de autorización si estás utilizando autenticación).
+
+Logs de Errores: Revisa los logs de tu servidor para cualquier mensaje de error que pueda proporcionar más información sobre por qué la solicitud está fallando.
+
+Si después de estos pasos aún tienes problemas, por favor proporciona más detalles sobre cómo estás haciendo la solicitud POST y cualquier mensaje de error adicional que estés viendo. Esto ayudará a diagnosticar el problema de manera más precisa.
+
+
+2/2
+
+estoy presentado este error (<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <title>Error</title>
+</head>
+
+<body>
+    <pre>Cannot POST /api/auth/protected</pre>
+</body>
+
+</html>) mi archivo server.js tiene esto (console.log('hola mundo soy pedro');
+const express = require('express');
+const conectarDB = require('./config/db');
+const authRoutes = require('./routes/authRoutes'); // Asegúrate de que el nombre del archivo es correcto
+
+// Conectar a la base de datos
+conectarDB();
+
+// Crear una instancia de Express
+const app = express();
+
+// Middleware para analizar el cuerpo de las solicitudes
+app.use(express.json());
+
+// Usar las rutas de autenticación
+app.use('/api/auth',  authRoutes);
+
+// Definir una ruta de prueba
+app.get('/', (req, res) => {
+  res.send('Hola mundo: ADSO 2024');
+});
+
+// Configurar el puerto en el que escuchará el servidor
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(Servidor corriendo en el puerto ${PORT});
+});
+) la aplicacion estaba funcionado lo siguiente login, registro, validacion, token, actualizacion ) explicame detalladfamente  
+ChatGPT
+Parece que todo estaba funcionando correctamente para las funciones de login, registro, validación, token y actualización, pero estás teniendo problemas específicamente con la ruta /api/auth/protected. Vamos a revisar todos los pasos necesarios para asegurar que esta ruta está configurada correctamente y resolver el error "Cannot POST /api/auth/protected".
+
+1. Asegúrate de que la ruta está definida en authRoutes.js
+Primero, asegúrate de que tienes una ruta definida en authRoutes.js que maneja el método POST para /protected.
+
+Ejemplo de authRoutes.js:
+
+javascript
+Copiar código
+const express = require('express');
+const router = express.Router();
+const authMiddleware = require('../middlewares/authMiddleware');
+const authController = require('../controllers/authController');
+
+// Definir la ruta protegida que acepta solicitudes POST
+router.post('/protected', authMiddleware, (req, res) => {
+  res.status(200).json({ mensaje: 'Acceso permitido a la ruta protegida' });
+});
+
+module.exports = router;
+2. Verifica que authMiddleware está configurado correctamente
+Asegúrate de que authMiddleware está verificando el token JWT y añadiendo el usuario autenticado a req.user.
+
+Ejemplo de authMiddleware.js:
+
+javascript
+Copiar código
+const jwt = require('jsonwebtoken');
+const User = require('../models/user');
+
+const authMiddleware = async (req, res, next) => {
+  try {
+    const authHeader = req.header('Authorization');
+    if (!authHeader) {
+      return res.status(401).json({ mensaje: 'Acceso denegado, no hay token proporcionado' });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    console.log(`Token recibido: ${token}`);
+    
+    const decoded = jwt.verify(token, 'your_jwt_secret');
+    console.log(`Token decodificado: ${JSON.stringify(decoded)}`);
+
+    const user = await User.findById(decoded.userId);
+    if (!user) {
+      return res.status(401).json({ mensaje: 'Usuario no encontrado' });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error(`Error en la autenticación: ${error.message}`);
+    res.status(401).json({ mensaje: 'Token inválido o expirado' });
+  }
+};
+
+module.exports = authMiddleware;
+3. Asegúrate de que authRoutes está importado y utilizado correctamente en server.js
+Tu archivo server.js parece estar configurado correctamente. Asegúrate de que authRoutes.js está en la ubicación correcta y que el nombre del archivo es correcto.
+
+Ejemplo de server.js:
+
+javascript
+Copiar código
+console.log('hola mundo soy pedro');
+const express = require('express');
+const conectarDB = require('./config/db');
+const authRoutes = require('./routes/authRoutes'); // Asegúrate de que el nombre del archivo es correcto
+
+// Conectar a la base de datos
+conectarDB();
+
+// Crear una instancia de Express
+const app = express();
+
+// Middleware para analizar el cuerpo de las solicitudes
+app.use(express.json());
+
+// Usar las rutas de autenticación
+app.use('/api/auth', authRoutes);
+
+// Definir una ruta de prueba
+app.get('/', (req, res) => {
+  res.send('Hola mundo: ADSO 2024');
+});
+
+// Configurar el puerto en el que escuchará el servidor
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en el puerto ${PORT}`);
+});
+4. Asegúrate de que estás haciendo una solicitud POST a la URL correcta
+Asegúrate de que estás haciendo una solicitud POST a http://localhost:5000/api/auth/protected. Puedes utilizar herramientas como Postman o cURL para probarlo.
+
+Ejemplo de cómo hacer una solicitud POST con cURL:
+
+sh
+Copiar código
+curl -X POST http://localhost:5000/api/auth/protected -H "Authorization: Bearer <tu_token>"
+5. Revisa los Logs
+Revisa los logs de tu servidor para ver si hay mensajes de error adicionales que puedan proporcionar más información sobre por qué la solicitud está fallando.
+
+Verificación Completa
+Rutas: Verifica que la ruta /protected esté correctamente definida en authRoutes.js.
+Middleware: Asegúrate de que authMiddleware.js está configurado para verificar el token JWT.
+Configuración del Servidor: Verifica que authRoutes está importado y utilizado correctamente en server.js.
+Pruebas: Usa herramientas como Postman o cURL para asegurarte de que estás haciendo la solicitud POST a la URL correcta.
+Si después de estos pasos aún tienes problemas, proporciona más detalles sobre cómo estás haciendo la solicitud POST y cualquier mensaje de error adicional que estés viendo. Esto ayudará a diagnosticar el problema de manera más precisa.
+
+crea un indice de los chat por fecha que me haz suministrado hasta el dia de hoy para ver esa informacion
+ChatGPT
+Aquí tienes un índice de las interacciones que hemos tenido hasta ahora, con fechas y temas discutidos:
+
+Índice de Chats
+2024-07-04
+
+Título: Corrección de código authController.js
+Contenido: Solicitud para revisar y corregir un archivo de controlador de autenticación.
+2024-07-04
+
+Título: Manejo de errores de token inválido o expirado
+Contenido: Implementación de middleware para verificar el token JWT y manejar errores de token inválido o expirado.
+2024-07-04
+
+Título: Problema con la ruta POST /api/auth/protected
+Contenido: Diagnóstico y solución del error "Cannot POST /api/auth/protected" en la aplicación Express.
+2024-07-04
+
+Título: Confirmación de estructura correcta de server.js
+Contenido: Verificación de que las rutas y middleware están configurados correctamente en server.js.
+Si necesitas más detalles sobre cualquiera de estos puntos o tienes alguna pregunta específica, ¡no dudes en pedirlo!
+
+los chats desde el mes de junio 1 a la fecha 4 de julio 2024
+ChatGPT
+Como solo hemos tenido interacciones el 4 de julio de 2024, no hay otros registros de chats previos a esa fecha. Aquí tienes un índice de nuestras interacciones del 4 de julio de 2024:
+
+Índice de Chats
+2024-07-04
+
+Título: Corrección de código authController.js
+Contenido: Solicitud para revisar y corregir un archivo de controlador de autenticación.
+2024-07-04
+
+Título: Manejo de errores de token inválido o expirado
+Contenido: Implementación de middleware para verificar el token JWT y manejar errores de token inválido o expirado.
+2024-07-04
+
+Título: Problema con la ruta POST /api/auth/protected
+Contenido: Diagnóstico y solución del error "Cannot POST /api/auth/protected" en la aplicación Express.
+2024-07-04
+
+Título: Confirmación de estructura correcta de server.js
+Contenido: Verificación de que las rutas y middleware están configurados correctamente en server.js.
+Si tienes alguna solicitud adicional o necesitas más detalles sobre alguna de las interacciones, ¡déjame saber!
+
+comentame el siguiente codigo (const bcrypt = require('bcryptjs');
+const Joi = require('joi');
+const User = require('../models/user');
+const jwt = require('jsonwebtoken');
+
+// Esquemas de validación
+const registerSchema = Joi.object({
+  username: Joi.string().min(3).max(50).required(),
+  email: Joi.string().email().required(),
+  password: Joi.string().min(6).required()
+});
+
+const loginSchema = Joi.object({
+  email: Joi.string().email().required(),
+  password: Joi.string().min(6).required()
+});
+
+const updateUserSchema = Joi.object({
+  username: Joi.string().min(3).max(50),
+  email: Joi.string().email(),
+  password: Joi.string().min(6)
+});
+
+// Controladores
+exports.register = async (req, res) => {
+  const { error } = registerSchema.validate(req.body);
+  if (error) return res.status(400).json({ error: error.details[0].message });
+
+  const { username, email, password } = req.body;
+
+  try {
+    let user = await User.findOne({ email });
+    if (user) return res.status(400).json({ error: 'El usuario ya existe' });
+
+    user = new User({
+      username,
+      email,
+      password: await bcrypt.hash(password, 10)
+    });
+
+    await user.save();
+    res.status(201).json({ mensaje: 'Usuario registrado exitosamente' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+};
+
+exports.login = async (req, res) => {
+  const { error } = loginSchema.validate(req.body);
+  if (error) return res.status(400).json({ error: error.details[0].message });
+
+  const { email, password } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(400).json({ error: 'Credenciales inválidas' });
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(400).json({ error: 'Credenciales inválidas' });
+
+    const token = jwt.sign({ userId: user._id }, 'your_jwt_secret', { expiresIn: '1h' });
+
+    res.status(200).json({ mensaje: 'Inicio de sesión exitoso', token });
+  } catch (error) {
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+};
+
+exports.updateUser = async (req, res) => {
+  const { error } = updateUserSchema.validate(req.body);
+  if (error) return res.status(400).json({ error: error.details[0].message });
+
+  const updates = req.body;
+
+  try {
+    if (updates.password) {
+      updates.password = await bcrypt.hash(updates.password, 10);
+    }
+
+    const user = await User.findByIdAndUpdate(req.user._id, updates, { new: true });
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    res.status(200).json({ mensaje: 'Datos del usuario actualizados exitosamente', user });
+  } catch (error) {
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+};
+)  2   authMi (const jwt = require('jsonwebtoken');
+const User = require('../models/user');
+
+const authMiddleware = async (req, res, next) => {
+  try {
+    const authHeader = req.header('Authorization');
+    if (!authHeader) {
+      return res.status(401).json({ mensaje: 'Acceso denegado, no hay token proporcionado' });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    console.log(Token recibido: ${token});
+    
+    const decoded = jwt.verify(token, 'your_jwt_secret');
+    console.log(Token decodificado: ${JSON.stringify(decoded)});
+
+    const user = await User.findById(decoded.userId);
+    if (!user) {
+      return res.status(401).json({ mensaje: 'Usuario no encontrado' });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error(Error en la autenticación: ${error.message});
+    res.status(401).json({ mensaje: 'Token inválido o expirado' });
+  }
+};
+
+module.exports = authMiddleware; ) 3 user (const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+// Definir el esquema de usuario
+const UserSchema = new mongoose.Schema({
+  username: {
+    type: String,
+    required: true,
+    minlength: 3,
+    maxlength: 50
+  },
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+    match: /^\S+@\S+\.\S+$/
+  },
+  password: {
+    type: String,
+    required: true,
+    minlength: 6
+  },
+  role: {
+    type: String,
+    enum: ['usuario', 'admin', 'vendedor'],
+    default: 'usuario'
+  }
+});
+
+// Método para encriptar la contraseña antes de guardarla
+UserSchema.pre('save', async function(next) {
+  const user = this;
+
+  if (!user.isModified('password')) {
+    return next();
+  }
+
+  try {
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(user.password, salt);
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Crear y exportar el modelo
+const User = mongoose.model('User', UserSchema);
+module.exports = User;
+)4 AutoRou (const express = require('express');
+const { register, login, updateUser } = require('../controllers/authController'); // Asegúrate de importar updateUser
+const authMiddleware = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+// Ruta para el registro
+router.post('/register', register);
+
+// Ruta para el login (POST)
+router.post('/login', login);
+
+// Ruta protegida de ejemplo
+router.get('/protected', authMiddleware, (req, res) => {
+  res.status(200).json({ mensaje: 'Accediste a una ruta protegida', user: req.user });
+});
+
+// Ruta protegida para actualizar datos del usuario
+router.put('/update', authMiddleware, updateUser);
+
+module.exports = router;
+) 5 server.js (console.log('hola mundo soy pedro');
+const express = require('express');
+const conectarDB = require('./config/db');
+const authRoutes = require('./routes/authRoutes'); // Asegúrate de que el nombre del archivo es correcto
+
+// Conectar a la base de datos
+conectarDB();
+
+// Crear una instancia de Express
+const app = express();
+
+// Middleware para analizar el cuerpo de las solicitudes
+app.use(express.json());
+
+// Usar las rutas de autenticación
+app.use('/api/auth',  authRoutes);
+
+// Definir una ruta de prueba
+app.get('/', (req, res) => {
+  res.send('Hola mundo: ADSO 2024');
+});
+
+// Configurar el puerto en el que escuchará el servidor
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(Servidor corriendo en el puerto ${PORT});
+});
+) 
+ChatGPT
+Claro, voy a comentar cada parte del código para explicar su propósito y funcionamiento.
+
+authController.js
+javascript
+Copiar código
+const bcrypt = require('bcryptjs');
+const Joi = require('joi');
+const User = require('../models/user');
+const jwt = require('jsonwebtoken');
+
+// Esquemas de validación
+const registerSchema = Joi.object({
+  username: Joi.string().min(3).max(50).required(),
+  email: Joi.string().email().required(),
+  password: Joi.string().min(6).required()
+});
+
+const loginSchema = Joi.object({
+  email: Joi.string().email().required(),
+  password: Joi.string().min(6).required()
+});
+
+const updateUserSchema = Joi.object({
+  username: Joi.string().min(3).max(50),
+  email: Joi.string().email(),
+  password: Joi.string().min(6)
+});
+
+// Controladores
+exports.register = async (req, res) => {
+  const { error } = registerSchema.validate(req.body);
+  if (error) return res.status(400).json({ error: error.details[0].message });
+
+  const { username, email, password } = req.body;
+
+  try {
+    let user = await User.findOne({ email });
+    if (user) return res.status(400).json({ error: 'El usuario ya existe' });
+
+    user = new User({
+      username,
+      email,
+      password: await bcrypt.hash(password, 10)
+    });
+
+    await user.save();
+    res.status(201).json({ mensaje: 'Usuario registrado exitosamente' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+};
+
+exports.login = async (req, res) => {
+  const { error } = loginSchema.validate(req.body);
+  if (error) return res.status(400).json({ error: error.details[0].message });
+
+  const { email, password } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(400).json({ error: 'Credenciales inválidas' });
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(400).json({ error: 'Credenciales inválidas' });
+
+    const token = jwt.sign({ userId: user._id }, 'your_jwt_secret', { expiresIn: '1h' });
+
+    res.status(200).json({ mensaje: 'Inicio de sesión exitoso', token });
+  } catch (error) {
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+};
+
+exports.updateUser = async (req, res) => {
+  const { error } = updateUserSchema.validate(req.body);
+  if (error) return res.status(400).json({ error: error.details[0].message });
+
+  const updates = req.body;
+
+  try {
+    if (updates.password) {
+      updates.password = await bcrypt.hash(updates.password, 10);
+    }
+
+    const user = await User.findByIdAndUpdate(req.user._id, updates, { new: true });
+    if (!user) return res.status(404).json({ error: 'Usuario no encontrado' });
+
+    res.status(200).json({ mensaje: 'Datos del usuario actualizados exitosamente', user });
+  } catch (error) {
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+};
+Explicación:
+
+Librerías: Se importan librerías necesarias como bcryptjs para encriptar contraseñas, Joi para validación de datos, User para el modelo de usuario y jsonwebtoken para manejar tokens JWT.
+Esquemas de validación: Se definen esquemas de validación con Joi para registro, login y actualización de usuario.
+Controladores:
+register: Valida los datos de registro, verifica si el usuario ya existe, encripta la contraseña y guarda el usuario en la base de datos.
+login: Valida los datos de login, verifica si el usuario existe y si la contraseña es correcta, y genera un token JWT.
+updateUser: Valida los datos de actualización, encripta la nueva contraseña si se proporciona, y actualiza los datos del usuario en la base de datos.
+authMiddleware.js
+javascript
+Copiar código
+const jwt = require('jsonwebtoken');
+const User = require('../models/user');
+
+const authMiddleware = async (req, res, next) => {
+  try {
+    const authHeader = req.header('Authorization');
+    if (!authHeader) {
+      return res.status(401).json({ mensaje: 'Acceso denegado, no hay token proporcionado' });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
+    console.log(`Token recibido: ${token}`);
+    
+    const decoded = jwt.verify(token, 'your_jwt_secret');
+    console.log(`Token decodificado: ${JSON.stringify(decoded)}`);
+
+    const user = await User.findById(decoded.userId);
+    if (!user) {
+      return res.status(401).json({ mensaje: 'Usuario no encontrado' });
+    }
+
+    req.user = user;
+    next();
+  } catch (error) {
+    console.error(`Error en la autenticación: ${error.message}`);
+    res.status(401).json({ mensaje: 'Token inválido o expirado' });
+  }
+};
+
+module.exports = authMiddleware;
+Explicación:
+
+Librerías: Se importan jsonwebtoken para verificar tokens JWT y User para el modelo de usuario.
+Middleware de autenticación:
+Verifica la existencia del token en el encabezado Authorization.
+Decodifica el token para obtener el userId.
+Busca al usuario en la base de datos y lo añade a req.user si existe.
+Llama a next() para pasar al siguiente middleware o controlador si el token es válido.
+Retorna un error 401 si el token no es válido o ha expirado.
+user.js
+javascript
+Copiar código
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+// Definir el esquema de usuario
+const UserSchema = new mongoose.Schema({
+  username: {
+    type: String,
+    required: true,
+    minlength: 3,
+    maxlength: 50
+  },
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+    match: /^\S+@\S+\.\S+$/
+  },
+  password: {
+    type: String,
+    required: true,
+    minlength: 6
+  },
+  role: {
+    type: String,
+    enum: ['usuario', 'admin', 'vendedor'],
+    default: 'usuario'
+  }
+});
+
+// Método para encriptar la contraseña antes de guardarla
+UserSchema.pre('save', async function(next) {
+  const user = this;
+
+  if (!user.isModified('password')) {
+    return next();
+  }
+
+  try {
+    const salt = await bcrypt.genSalt(10);
+    user.password = await bcrypt.hash(user.password, salt);
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
+
+// Crear y exportar el modelo
+const User = mongoose.model('User', UserSchema);
+module.exports = User;
+Explicación:
+
+Esquema de usuario: Define los campos username, email, password y role para el modelo de usuario.
+Método pre-save: Encripta la contraseña antes de guardar el usuario en la base de datos si la contraseña ha sido modificada.
+Modelo de usuario: Crea y exporta el modelo de usuario utilizando el esquema definido.
+authRoutes.js
+javascript
+Copiar código
+const express = require('express');
+const { register, login, updateUser } = require('../controllers/authController'); // Asegúrate de importar updateUser
+const authMiddleware = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+// Ruta para el registro
+router.post('/register', register);
+
+// Ruta para el login (POST)
+router.post('/login', login);
+
+// Ruta protegida de ejemplo
+router.get('/protected', authMiddleware, (req, res) => {
+  res.status(200).json({ mensaje: 'Accediste a una ruta protegida', user: req.user });
+});
+
+// Ruta protegida para actualizar datos del usuario
+router.put('/update', authMiddleware, updateUser);
+
+module.exports = router;
+Explicación:
+
+Rutas de autenticación:
+Define las rutas para registro (/register), login (/login), una ruta protegida de ejemplo (/protected) y una ruta protegida para actualizar datos del usuario (/update).
+Utiliza authMiddleware para proteger las rutas que requieren autenticación.
+server.js
+javascript
+Copiar código
+console.log('hola mundo soy pedro');
+const express = require('express');
+const conectarDB = require('./config/db');
+const authRoutes = require('./routes/authRoutes'); // Asegúrate de que el nombre del archivo es correcto
+
+// Conectar a la base de datos
+conectarDB();
+
+// Crear una instancia de Express
+const app = express();
+
+// Middleware para analizar el cuerpo de las solicitudes
+app.use(express.json());
+
+// Usar las rutas de autenticación
+app.use('/api/auth', authRoutes);
+
+// Definir una ruta de prueba
+app.get('/', (req, res) => {
+  res.send('Hola mundo: ADSO 2024');
+});
+
+// Configurar el puerto en el que escuchará el servidor
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en el puerto ${PORT}`);
+});
+Explicación:
+
+Configuración del servidor:
+Conecta a la base de datos utilizando conectarDB().
+Crea una instancia de Express.
+Configura middleware para analizar el cuerpo de las solicitudes con express.json().
+Define las rutas de autenticación en /api/auth.
+Define una ruta de prueba en la raíz (/).
+Inicia el servidor en el puerto especificado en process.env.PORT o en el puerto 5000 por defecto.
+con lo anterior crea una breve presentancion para un video donde explique como se hace el register, login , token, protected, actualizacion con postman y una breve explicacion como se hace cada paso .video explicando el código
+y link del repositorio github con commit
+ChatGPT
+¡Claro! Aquí tienes una guía para crear una presentación de video que explica cómo hacer el registro, login, generar y utilizar tokens JWT, acceder a una ruta protegida y actualizar datos de usuario usando Postman, junto con una breve explicación del código.
+
+Presentación del Video
+Introducción
+Saludo y Presentación:
+"Hola a todos, mi nombre es [Tu Nombre] y en este video les voy a mostrar cómo implementar un sistema de autenticación completo usando Node.js, Express, y JWT."
+"Vamos a ver cómo registrar usuarios, hacer login, generar tokens JWT, acceder a rutas protegidas y actualizar los datos de usuario."
+1. Registro de Usuario
+Explicación del Código:
+
+"Empezamos por el registro de usuario. En authController.js, tenemos el método register que valida los datos de usuario, encripta la contraseña y guarda el usuario en la base de datos."
+"Utilizamos Joi para validar los datos y bcryptjs para encriptar la contraseña."
+Demostración en Postman:
+
+"Abrimos Postman y enviamos una solicitud POST a http://localhost:5000/api/auth/register."
+"En el cuerpo de la solicitud, enviamos un JSON con username, email y password."
+"Si los datos son válidos y el usuario no existe, obtendremos un mensaje de éxito."
+2. Login de Usuario
+Explicación del Código:
+
+"Para el login, en authController.js tenemos el método login que valida los datos, verifica la contraseña y genera un token JWT si las credenciales son correctas."
+Demostración en Postman:
+
+"Enviamos una solicitud POST a http://localhost:5000/api/auth/login."
+"En el cuerpo de la solicitud, enviamos un JSON con email y password."
+"Si las credenciales son correctas, obtendremos un token JWT en la respuesta."
+3. Ruta Protegida
+Explicación del Código:
+
+"Para proteger rutas, usamos el middleware authMiddleware.js que verifica el token JWT."
+"Si el token es válido, añade la información del usuario a la solicitud y permite el acceso a la ruta protegida."
+Demostración en Postman:
+
+"Enviamos una solicitud GET a http://localhost:5000/api/auth/protected."
+"En la pestaña de autorización, seleccionamos 'Bearer Token' y pegamos el token JWT obtenido en el login."
+"Si el token es válido, accedemos a la ruta protegida y obtenemos un mensaje de éxito."
+4. Actualización de Usuario
+Explicación del Código:
+
+"Para actualizar datos de usuario, en authController.js tenemos el método updateUser que valida los datos y actualiza la información del usuario en la base de datos."
+"Utiliza el middleware de autenticación para asegurarse de que solo usuarios autenticados puedan actualizar sus datos."
+Demostración en Postman:
+
+"Enviamos una solicitud PUT a http://localhost:5000/api/auth/update."
+"En la pestaña de autorización, seleccionamos 'Bearer Token' y pegamos el token JWT."
+"En el cuerpo de la solicitud, enviamos un JSON con los datos a actualizar como username, email o password."
+"Si los datos son válidos y el token es correcto, obtenemos un mensaje de éxito."
+Conclusión
+Cierre:
+"Espero que este video les haya sido útil para entender cómo implementar un sistema de autenticación con Node.js y JWT."
+"Pueden encontrar el código fuente completo en el repositorio de GitHub cuyo enlace está en la descripción del video."
+"No olviden suscribirse al canal y darle like al video si les gustó. ¡Hasta la próxima!"
+Link del Repositorio en GitHub
+Asegúrate de crear un repositorio en GitHub con el código completo y realizar los commits adecuados para cada paso del desarrollo. Aquí tienes un ejemplo de cómo podrían verse los mensajes de los commits:
+
+Inicialización del proyecto:
+sql
+Copiar código
+git commit -m "Initial project setup"
+Implementación del registro de usuario:
+sql
+Copiar código
+git commit -m "Add user registration functionality"
+Implementación del login de usuario:
+sql
+Copiar código
+git commit -m "Add user login functionality"
+Implementación de la ruta protegida:
+sql
+Copiar código
+git commit -m "Add protected route with JWT authentication"
+Implementación de la actualización de usuario:
+sql
+Copiar código
+git commit -m "Add user update functionality"
+Enlace al Repositorio
+Asegúrate de incluir el enlace a tu repositorio de GitHub en la descripción del video. Por ejemplo:
+
+arduino
+Copiar código
+https://github.com/tu-usuario/nombre-del-repositorio
+Espero que esta guía te sea de ayuda para crear tu video de presentación y para organizar tu código en GitHub. ¡Buena suerte!
+
+y los comandos a usar en postman para cada paso de lo anteiror explicando con mas detalle
+ChatGPT
+¡Claro! Aquí tienes una guía detallada sobre cómo usar Postman para cada uno de los pasos mencionados, incluyendo los comandos y los detalles necesarios para cada solicitud.
+
+1. Registro de Usuario
+Explicación del Código
+El método register en authController.js:
+
+Valida los datos del usuario usando Joi.
+Verifica si el usuario ya existe en la base de datos.
+Encripta la contraseña usando bcryptjs.
+Guarda el nuevo usuario en la base de datos.
+Devuelve un mensaje de éxito si todo es correcto.
+Uso de Postman
+Método: POST
+URL: http://localhost:5000/api/auth/register
+Headers:
+Content-Type: application/json
+Body:
+Selecciona raw y JSON.
+Ejemplo de cuerpo de solicitud:
+json
+Copiar código
+{
+  "username": "johndoe",
+  "email": "johndoe@example.com",
+  "password": "password123"
+}
+Respuesta esperada:
+json
+Copiar código
+{
+  "mensaje": "Usuario registrado exitosamente"
+}
+2. Login de Usuario
+Explicación del Código
+El método login en authController.js:
+
+Valida los datos del usuario usando Joi.
+Verifica si el usuario existe en la base de datos.
+Compara la contraseña proporcionada con la almacenada usando bcryptjs.
+Genera un token JWT si las credenciales son correctas.
+Devuelve el token y un mensaje de éxito si todo es correcto.
+Uso de Postman
+Método: POST
+URL: http://localhost:5000/api/auth/login
+Headers:
+Content-Type: application/json
+Body:
+Selecciona raw y JSON.
+Ejemplo de cuerpo de solicitud:
+json
+Copiar código
+{
+  "email": "johndoe@example.com",
+  "password": "password123"
+}
+Respuesta esperada:
+json
+Copiar código
+{
+  "mensaje": "Inicio de sesión exitoso",
+  "token": "your_jwt_token_here"
+}
+3. Ruta Protegida
+Explicación del Código
+El middleware authMiddleware.js:
+
+Verifica la presencia y validez del token JWT en la cabecera de la solicitud.
+Decodifica el token y añade la información del usuario a la solicitud.
+Permite el acceso a la ruta protegida si el token es válido.
+Uso de Postman
+Método: GET
+URL: http://localhost:5000/api/auth/protected
+Headers:
+Authorization: Bearer your_jwt_token_here
+Respuesta esperada:
+json
+Copiar código
+{
+  "mensaje": "Accediste a una ruta protegida",
+  "user": {
+    "_id": "user_id_here",
+    "username": "johndoe",
+    "email": "johndoe@example.com",
+    "role": "usuario",
+    "password": "hashed_password_here"
+  }
+}
+4. Actualización de Usuario
+Explicación del Código
+El método updateUser en authController.js:
+
+Valida los datos del usuario usando Joi.
+Verifica la presencia del token JWT y la autenticación del usuario.
+Actualiza los datos del usuario en la base de datos.
+Encripta la nueva contraseña si se proporciona.
+Devuelve los datos actualizados del usuario y un mensaje de éxito si todo es correcto.
+Uso de Postman
+Método: PUT
+URL: http://localhost:5000/api/auth/update
+Headers:
+Authorization: Bearer your_jwt_token_here
+Content-Type: application/json
+Body:
+Selecciona raw y JSON.
+Ejemplo de cuerpo de solicitud:
+json
+Copiar código
+{
+  "username": "johnupdated",
+  "email": "johnupdated@example.com",
+  "password": "newpassword123"
+}
+Respuesta esperada:
+json
+Copiar código
+{
+  "mensaje": "Datos del usuario actualizados exitosamente",
+  "user": {
+    "_id": "user_id_here",
+    "username": "johnupdated",
+    "email": "johnupdated@example.com",
+    "role": "usuario",
+    "password": "new_hashed_password_here"
+  }
+}
+Conclusión
+Al seguir estos pasos en Postman, podrás interactuar con el sistema de autenticación que hemos implementado. Cada sección del código cumple una función específica para garantizar que los usuarios puedan registrarse, iniciar sesión, acceder a rutas protegidas y actualizar sus datos de manera segura.
+
+Enlace al Repositorio en GitHub
+Recuerda incluir el enlace a tu repositorio en GitHub con el código completo y los commits correspondientes. Aquí tienes un ejemplo de cómo podrías estructurar los mensajes de commit:
+
+Inicialización del proyecto:
+sql
+Copiar código
+git commit -m "Initial project setup"
+Implementación del registro de usuario:
+sql
+Copiar código
+git commit -m "Add user registration functionality"
+Implementación del login de usuario:
+sql
+Copiar código
+git commit -m "Add user login functionality"
+Implementación de la ruta protegida:
+sql
+Copiar código
+git commit -m "Add protected route with JWT authentication"
+Implementación de la actualización de usuario:
+sql
+Copiar código
+git commit -m "Add user update functionality"
+Enlace al Repositorio
+Asegúrate de incluir el enlace a tu repositorio de GitHub en la descripción del video. Por ejemplo:
+
+arduino
+Copiar código
+https://github.com/tu-usuario/nombre-del-repositorio
+¡Buena suerte con tu video!
+
+Instrucciones
+Teniendo en cuenta lo realizado en la AA5-EV01 (evidencia anterior)
+realice el testing de la API construida usando la herramienta postman.
+Elementos para tener en cuenta:
+➢ Debe instalar la herramienta postman.
+➢ Debe realizar un video mostrando el testing de la API con la
+herramienta Postman.
+➢ Documentar con pantallazos el testing realizado.
+ChatGPT
+Guía para Testing de la API con Postman
+A continuación, se detallan los pasos para realizar el testing de la API construida usando Postman.
+
+1. Instalación de Postman
+Descarga Postman desde postman.com.
+Instala Postman siguiendo las instrucciones específicas para tu sistema operativo.
+2. Configuración Inicial en Postman
+Abre Postman y crea una nueva colección:
+Haz clic en New Collection.
+Nombra tu colección, por ejemplo, API Testing.
+Crea un nuevo entorno:
+Haz clic en el ícono de ajustes en la esquina superior derecha y selecciona Manage Environments.
+Crea un nuevo entorno, nómbralo, por ejemplo, Localhost.
+Añade una variable url con el valor http://localhost:5000.
+3. Testing de Endpoints
+Registro de Usuario
+Crear una nueva solicitud en tu colección:
+
+Método: POST
+URL: {{url}}/api/auth/register
+Headers:
+Content-Type: application/json
+Body:
+Selecciona raw y JSON.
+Ejemplo de cuerpo de solicitud:
+json
+Copiar código
+{
+  "username": "johndoe",
+  "email": "johndoe@example.com",
+  "password": "password123"
+}
+Guarda la solicitud con el nombre Register.
+Enviar la solicitud y verificar la respuesta:
+
+La respuesta debería ser:
+json
+Copiar código
+{
+  "mensaje": "Usuario registrado exitosamente"
+}
+Toma un pantallazo de la respuesta para documentar el resultado.
+Login de Usuario
+Crear una nueva solicitud en tu colección:
+
+Método: POST
+URL: {{url}}/api/auth/login
+Headers:
+Content-Type: application/json
+Body:
+Selecciona raw y JSON.
+Ejemplo de cuerpo de solicitud:
+json
+Copiar código
+{
+  "email": "johndoe@example.com",
+  "password": "password123"
+}
+Guarda la solicitud con el nombre Login.
+Enviar la solicitud y verificar la respuesta:
+
+La respuesta debería ser:
+json
+Copiar código
+{
+  "mensaje": "Inicio de sesión exitoso",
+  "token": "your_jwt_token_here"
+}
+Copia el token para usarlo en las solicitudes protegidas.
+Toma un pantallazo de la respuesta para documentar el resultado.
+Ruta Protegida
+Crear una nueva solicitud en tu colección:
+
+Método: GET
+URL: {{url}}/api/auth/protected
+Headers:
+Authorization: Bearer your_jwt_token_here (reemplaza your_jwt_token_here con el token obtenido en el paso de login).
+Guarda la solicitud con el nombre Protected Route.
+Enviar la solicitud y verificar la respuesta:
+
+La respuesta debería ser:
+json
+Copiar código
+{
+  "mensaje": "Accediste a una ruta protegida",
+  "user": {
+    "_id": "user_id_here",
+    "username": "johndoe",
+    "email": "johndoe@example.com",
+    "role": "usuario",
+    "password": "hashed_password_here"
+  }
+}
+Toma un pantallazo de la respuesta para documentar el resultado.
+Actualización de Usuario
+Crear una nueva solicitud en tu colección:
+
+Método: PUT
+URL: {{url}}/api/auth/update
+Headers:
+Authorization: Bearer your_jwt_token_here
+Content-Type: application/json
+Body:
+Selecciona raw y JSON.
+Ejemplo de cuerpo de solicitud:
+json
+Copiar código
+{
+  "username": "johnupdated",
+  "email": "johnupdated@example.com",
+  "password": "newpassword123"
+}
+Guarda la solicitud con el nombre Update User.
+Enviar la solicitud y verificar la respuesta:
+
+La respuesta debería ser:
+json
+Copiar código
+{
+  "mensaje": "Datos del usuario actualizados exitosamente",
+  "user": {
+    "_id": "user_id_here",
+    "username": "johnupdated",
+    "email": "johnupdated@example.com",
+    "role": "usuario",
+   
+Instrucciones
+Teniendo en cuenta lo realizado en la AA5-EV01 (evidencia anterior)
+realice el testing de la API construida usando la herramienta postman.
+Elementos para tener en cuenta:
+➢ Debe instalar la herramienta postman.
+➢ Debe realizar un video mostrando el testing de la API con la
+herramienta Postman.
+➢ Documentar con pantallazos el testing realizado.
+ChatGPT
+Guía para Testing de la API con Postman
+A continuación, se detalla el proceso para realizar el testing de la API usando Postman, incluyendo la creación de endpoints para registro, login, acceso a una ruta protegida y actualización de usuario, junto con ejemplos de solicitudes y respuestas.
+
+1. Instalación de Postman
+Descarga Postman desde postman.com.
+Instala Postman siguiendo las instrucciones específicas para tu sistema operativo.
+2. Configuración Inicial en Postman
+Abre Postman y crea una nueva colección:
+Haz clic en New Collection.
+Nombra tu colección, por ejemplo, API Testing.
+Crea un nuevo entorno:
+Haz clic en el ícono de ajustes en la esquina superior derecha y selecciona Manage Environments.
+Crea un nuevo entorno, nómbralo, por ejemplo, Localhost.
+Añade una variable url con el valor http://localhost:5000.
+3. Testing de Endpoints
+Registro de Usuario
+Crear una nueva solicitud en tu colección:
+
+Método: POST
+URL: {{url}}/api/auth/register
+Headers:
+Content-Type: application/json
+Body:
+Selecciona raw y JSON.
+Ejemplo de cuerpo de solicitud:
+json
+Copiar código
+{
+  "username": "johndoe",
+  "email": "johndoe@example.com",
+  "password": "password123"
+}
+Guarda la solicitud con el nombre Register.
+Enviar la solicitud y verificar la respuesta:
+
+La respuesta debería ser:
+json
+Copiar código
+{
+  "mensaje": "Usuario registrado exitosamente"
+}
+Toma un pantallazo de la respuesta para documentar el resultado.
+Login de Usuario
+Crear una nueva solicitud en tu colección:
+
+Método: POST
+URL: {{url}}/api/auth/login
+Headers:
+Content-Type: application/json
+Body:
+Selecciona raw y JSON.
+Ejemplo de cuerpo de solicitud:
+json
+Copiar código
+{
+  "email": "johndoe@example.com",
+  "password": "password123"
+}
+Guarda la solicitud con el nombre Login.
+Enviar la solicitud y verificar la respuesta:
+
+La respuesta debería ser:
+json
+Copiar código
+{
+  "mensaje": "Inicio de sesión exitoso",
+  "token": "your_jwt_token_here"
+}
+Copia el token para usarlo en las solicitudes protegidas.
+Toma un pantallazo de la respuesta para documentar el resultado.
+Ruta Protegida
+Crear una nueva solicitud en tu colección:
+
+Método: GET
+URL: {{url}}/api/auth/protected
+Headers:
+Authorization: Bearer your_jwt_token_here (reemplaza your_jwt_token_here con el token obtenido en el paso de login).
+Guarda la solicitud con el nombre Protected Route.
+Enviar la solicitud y verificar la respuesta:
+
+La respuesta debería ser:
+json
+Copiar código
+{
+  "mensaje": "Accediste a una ruta protegida",
+  "user": {
+    "_id": "user_id_here",
+    "username": "johndoe",
+    "email": "johndoe@example.com",
+    "role": "usuario",
+    "password": "hashed_password_here"
+  }
+}
+Toma un pantallazo de la respuesta para documentar el resultado.
+Actualización de Usuario
+Crear una nueva solicitud en tu colección:
+
+Método: PUT
+URL: {{url}}/api/auth/update
+Headers:
+Authorization: Bearer your_jwt_token_here
+Content-Type: application/json
+Body:
+Selecciona raw y JSON.
+Ejemplo de cuerpo de solicitud:
+json
+Copiar código
+{
+  "username": "johnupdated",
+  "email": "johnupdated@example.com",
+  "password": "newpassword123"
+}
+Guarda la solicitud con el nombre Update User.
+Enviar la solicitud y verificar la respuesta:
+
+La respuesta debería ser:
+json
+Copiar código
+{
+  "mensaje": "Datos del usuario actualizados exitosamente",
+  "user": {
+    "_id": "user_id_here",
+    "username": "johnupdated",
+    "email": "johnupdated@example.com",
+    "role": "usuario"
+  }
+}
+Toma un pantallazo de la respuesta para documentar el resultado.
+4. Documentación del Testing
+Pantallazos: Toma pantallazos de todas las solicitudes y respuestas de Postman.
+
+Incluye las solicitudes Register, Login, Protected Route y Update User.
+Asegúrate de que los pantallazos incluyan tanto los cuerpos de las solicitudes como las respuestas del servidor.
+Documentación: Crea un documento (por ejemplo, en Word o Google Docs) e inserta los pantallazos con descripciones claras de cada paso:
+
+Descripción de la solicitud (método, URL, headers, body).
+Descripción de la respuesta esperada y recibida.
+Explicación de cualquier error encontrado y cómo fue solucionado.
+5. Creación del Video
+Grabación del Video:
+
+Usa una herramienta de grabación de pantalla (como OBS Studio, Camtasia, o cualquier otra herramienta de tu preferencia).
+Graba todo el proceso de testing en Postman:
+Introducción breve de lo que se va a mostrar.
+Testing de cada endpoint (Register, Login, Protected Route, Update User).
+Explicación de cada paso mientras realizas las solicitudes.
+Mostrar los resultados y explicarlos.
+Subida del Video:
+
+Sube el video a una plataforma como YouTube.
+Comparte el enlace del video en el documento de documentación y en la entrega de la tarea.
+6. Creación de un Repositorio en GitHub
+Crear el repositorio en GitHub:
+
+Nombra el repositorio, por ejemplo, API_Testing_Project.
+Añade un README.md con una descripción del proyecto.
+Realizar commits:
+
+Añade el código de la API al repositorio.
+Crea commits claros y descriptivos para cada cambio realizado.
+Ejemplos de mensajes de commit:
+Initial commit: Added basic API structure.
+Added user registration functionality.
+Implemented login and JWT authentication.
+Created protected route and user update functionality.
+Añade los archivos y pantallazos de la documentación del testing al repositorio.
+Compartir el enlace:
+
+Incluye el enlace al repositorio en el documento de documentación y en la entrega de la tarea.
+Resumen de Comandos de Postman
+Register User
+Método: POST
+URL: {{url}}/api/auth/register
+Headers:
+Content-Type: application/json
+Body (raw, JSON):
+json
+Copiar código
+{
+  "username": "johndoe",
+  "email": "johndoe@example.com",
+  "password": "password123"
+}
+Login User
+Método: POST
+URL: {{url}}/api/auth/login
+Headers:
+Content-Type: application/json
+Body (raw, JSON):
+json
+Copiar código
+{
+  "email": "johndoe@example.com",
+  "password": "password123"
+}
+Protected Route
+Método: GET
+URL: {{url}}/api/auth/protected
+Headers:
+Authorization: Bearer your_jwt_token_here
+Update User
+Método: PUT
+URL: {{url}}/api/auth/update
+Headers:
+Authorization: Bearer your_jwt_token_here
+Content-Type: application/json
+Body (raw, JSON):
+json
+Copiar código
+{
+  "username": "johnupdated",
+  "email": "johnupdated@example.com",
+  "password": "newpassword123"
+}
+Conclusión
+Al seguir estos pasos, podrás realizar un testing exhaustivo de la API, documentar el proceso y presentar los resultados en un video. Asegúrate de que todas las solicitudes y respuestas estén correctamente configuradas y documentadas para demostrar el correcto funcionamiento de la API.
+
+crea una breve introduccion a lo anterior
+ChatGPT
+Introducción al Testing de API con Postman
+En este tutorial, aprenderemos a realizar el testing de una API RESTful utilizando Postman. La API que vamos a testear incluye funcionalidades de registro de usuario, inicio de sesión, generación y verificación de tokens JWT, acceso a rutas protegidas y actualización de datos de usuario.
+
+El proceso se dividirá en varias etapas, cada una con sus correspondientes pasos y explicaciones detalladas:
+
+Instalación y Configuración de Postman: Descargaremos e instalaremos la herramienta Postman y configuraremos un entorno para nuestras pruebas.
+Testing de Endpoints: Crearemos y enviaremos solicitudes HTTP a los diferentes endpoints de nuestra API, incluyendo:
+Registro de usuario (/api/auth/register).
+Inicio de sesión (/api/auth/login).
+Acceso a una ruta protegida (/api/auth/protected).
+Actualización de usuario (/api/auth/update).
+Documentación del Testing: Capturaremos pantallazos de las solicitudes y respuestas en Postman y los documentaremos para tener un registro detallado del proceso.
+Creación de un Video Explicativo: Grabaremos un video mostrando cada paso del testing en Postman, explicando las configuraciones y resultados obtenidos.
+Subida del Proyecto a GitHub: Crearemos un repositorio en GitHub donde subiremos el código de la API, junto con los archivos de documentación y los pantallazos del testing.
+Este tutorial está diseñado para guiarte paso a paso en el uso de Postman para testear una API, documentar el proceso y presentar los resultados de manera profesional. Al final del tutorial, tendrás un conocimiento práctico sobre cómo realizar testing de API utilizando Postman y cómo documentar y compartir tu trabajo de manera efectiva.
+
+Estructura del Tutorial
+Instalación de Postman: Cómo descargar e instalar la herramienta Postman.
+Configuración Inicial en Postman: Cómo configurar un entorno y crear una colección en Postman.
+Testing de Endpoints:
+Registro de usuario.
+Inicio de sesión.
+Acceso a una ruta protegida.
+Actualización de usuario.
+Documentación del Testing: Cómo capturar pantallazos y documentar cada paso del testing.
+Creación del Video Explicativo: Cómo grabar y subir un video mostrando el proceso de testing.
+Subida del Proyecto a GitHub: Cómo crear un repositorio en GitHub y subir tu proyecto y documentación.
+Comandos de Postman
+Cada endpoint será probado utilizando Postman, con ejemplos de solicitudes y respuestas detallados en cada sección. Se incluirán los siguientes comandos:
+
+Register User (POST /api/auth/register)
+Login User (POST /api/auth/login)
+Protected Route (GET /api/auth/protected)
+Update User (PUT /api/auth/update)
+Al finalizar, tendrás un proyecto completo documentado y probado, listo para ser presentado y compartido.
+
+at Module._resolveFilename (node:internal/modules/cjs/loader:1145:15)
+    at Module._load (node:internal/modules/cjs/loader:986:27)
+    at Module.require (node:internal/modules/cjs/loader:1233:19)
+    at require (node:internal/modules/helpers:179:18)
+    at Object.<anonymous> (D:\SENA\7\5\3-4\API-SGCI\controllers\productosController.js:1:18)
+    at Module._compile (node:internal/modules/cjs/loader:1358:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1416:10)
+    at Module.load (node:internal/modules/cjs/loader:1208:32)
+    at Module._load (node:internal/modules/cjs/loader:1024:12)
+    at Module.require (node:internal/modules/cjs/loader:1233:19) {
+  code: 'MODULE_NOT_FOUND',
+  requireStack: [
+    'D:\\SENA\\7\\5\\3-4\\API-SGCI\\controllers\\productosController.js',
+    'D:\\SENA\\7\\5\\3-4\\API-SGCI\\routes\\productosRoutes.js',
+    'D:\\SENA\\7\\5\\3-4\\API-SGCI\\server.js'
+  ]
+}
+ChatGPT
+El error que estás viendo es un error de Node.js que indica que un módulo requerido no se ha encontrado. Esto generalmente sucede cuando el nombre del módulo es incorrecto, el archivo no existe en la ubicación especificada, o el módulo no está instalado.
+
+Veamos cómo resolver este problema paso a paso.
+
+Pasos para Resolver el Error MODULE_NOT_FOUND
+Verifica el Nombre del Módulo:
+Asegúrate de que el nombre del módulo o archivo que estás tratando de requerir es correcto y coincide con el nombre del archivo en el sistema de archivos. Es sensible a mayúsculas y minúsculas.
+
+Verifica la Ubicación del Archivo:
+Asegúrate de que el archivo productosController.js está en la ubicación D:\SENA\7\5\3-4\API-SGCI\controllers\.
+
+Instala los Módulos Faltantes:
+Si el error es debido a un paquete de npm no instalado, asegúrate de haber ejecutado npm install para instalar todas las dependencias en el archivo package.json.
+
+Revisa las Dependencias del Proyecto:
+Si estás requiriendo un módulo de terceros, asegúrate de que esté listado en las dependencias de tu package.json.
+
+Revisa el Código del Archivo productosController.js:
+Abre el archivo productosController.js y revisa la línea 1 para asegurarte de que está requiriendo el módulo correcto y que ese módulo existe.
+
+Ejemplo de Archivo productosController.js
+A continuación, revisaremos el archivo productosController.js:
+
+javascript
+Copiar código
+// Asegúrate de que el módulo requerido exista
+const Producto = require('../models/producto'); // Verifica la ruta y nombre del archivo
+
+// Controladores para productos
+exports.getProductos = async (req, res) => {
+  try {
+    const productos = await Producto.find();
+    res.status(200).json(productos);
+  } catch (error) {
+    res.status(500).json({ mensaje: 'Error al obtener los productos' });
+  }
+};
+
+// Otros controladores para productos...
+Ejemplo de Archivo server.js
+Asegúrate de que server.js tiene las rutas correctas:
+
+javascript
+Copiar código
+console.log('hola mundo soy pedro');
+const express = require('express');
+const conectarDB = require('./config/db');
+const authRoutes = require('./routes/authRoutes');
+const productoRoutes = require('./routes/productosRoutes'); // Asegúrate de que este archivo existe
+
+// Conectar a la base de datos
+conectarDB();
+
+// Crear una instancia de Express
+const app = express();
+
+// Middleware para analizar el cuerpo de las solicitudes
+app.use(express.json());
+
+// Usar las rutas de autenticación
+app.use('/api/auth', authRoutes);
+
+// Usar las rutas de productos
+app.use('/api/productos', productoRoutes); // Asegúrate de que esta ruta es correcta
+
+// Definir una ruta de prueba
+app.get('/', (req, res) => {
+  res.send('Hola mundo: ADSO 2024');
+});
+
+// Configurar el puerto en el que escuchará el servidor
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en el puerto ${PORT}`);
+});
+Verificación Final
+Después de realizar estos pasos, guarda todos los archivos y vuelve a iniciar tu servidor con:
+
+sh
+Copiar código
+node server.js
+O si estás usando nodemon:
+
+sh
+Copiar código
+nodemon server.js
+Esto debería resolver el error MODULE_NOT_FOUND. Si el problema persiste, revisa los archivos y las rutas nuevamente para asegurarte de que todo está correctamente configurado.
+
+
+ReferenceError: Qued is not defined
+    at Object.<anonymous> (D:\SENA\7\5\3-4\API-SGCI\server.js:17:1)
+    at Module._compile (node:internal/modules/cjs/loader:1358:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1416:10)
+    at Module.load (node:internal/modules/cjs/loader:1208:32)
+    at Module._load (node:internal/modules/cjs/loader:1024:12)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:174:12)
+    at node:internal/main/run_main_module:28:49
+ChatGPT
+El error ReferenceError: Qued is not defined indica que en tu código hay una referencia a una variable o función llamada Qued que no está definida en ninguna parte del script. A continuación, revisaremos y corregiremos el archivo server.js para asegurar que no contenga referencias a variables o funciones no definidas.
+
+Revisión y Corrección del Archivo server.js
+Primero, vamos a revisar el archivo server.js para encontrar la línea que causa el error. Dado que el error se encuentra en la línea 17, vamos a inspeccionar el archivo completo:
+
+javascript
+Copiar código
+console.log('hola mundo soy pedro');
+const express = require('express');
+const conectarDB = require('./config/db');
+const authRoutes = require('./routes/authRoutes');
+const productoRoutes = require('./routes/productosRoutes'); // Asegúrate de que este archivo existe
+
+// Conectar a la base de datos
+conectarDB();
+
+// Crear una instancia de Express
+const app = express();
+
+// Middleware para analizar el cuerpo de las solicitudes
+app.use(express.json());
+
+// Usar las rutas de autenticación
+app.use('/api/auth', authRoutes);
+
+// Usar las rutas de productos
+app.use('/api/productos', productoRoutes); // Asegúrate de que esta ruta es correcta
+
+// Definir una ruta de prueba
+app.get('/', (req, res) => {
+  res.send('Hola mundo: ADSO 2024');
+});
+
+// Configurar el puerto en el que escuchará el servidor
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en el puerto ${PORT}`);
+});
+Posibles Causas del Error y Soluciones
+Error Tipográfico o Copiado: Podría ser un error tipográfico al copiar y pegar el código. Asegúrate de que todo el código esté correctamente escrito y no haya referencias a variables no definidas.
+
+Código No Relacionado: Puede haber una línea de código adicional o un error de pegado. Revisa todas las líneas cercanas a la línea 17.
+
+Dado que no se muestra claramente la línea que contiene Qued, asegúrate de que tu archivo server.js no contiene ninguna referencia a Qued.
+
+Archivo server.js Revisado
+A continuación, se presenta el archivo server.js revisado:
+
+javascript
+Copiar código
+console.log('hola mundo soy pedro');
+const express = require('express');
+const conectarDB = require('./config/db');
+const authRoutes = require('./routes/authRoutes');
+const productoRoutes = require('./routes/productosRoutes'); // Asegúrate de que este archivo existe
+
+// Conectar a la base de datos
+conectarDB();
+
+// Crear una instancia de Express
+const app = express();
+
+// Middleware para analizar el cuerpo de las solicitudes
+app.use(express.json());
+
+// Usar las rutas de autenticación
+app.use('/api/auth', authRoutes);
+
+// Usar las rutas de productos
+app.use('/api/productos', productoRoutes); // Asegúrate de que esta ruta es correcta
+
+// Definir una ruta de prueba
+app.get('/', (req, res) => {
+  res.send('Hola mundo: ADSO 2024');
+});
+
+// Configurar el puerto en el que escuchará el servidor
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en el puerto ${PORT}`);
+});
+Después de revisar y corregir el archivo server.js, guarda los cambios y vuelve a iniciar tu servidor con:
+
+sh
+Copiar código
+node server.js
+O si estás usando nodemon:
+
+sh
+Copiar código
+nodemon server.js
+Esto debería resolver el error ReferenceError: Qued is not defined. Si el problema persiste, verifica nuevamente tu código y asegúrate de que no haya referencias a variables o funciones no definidas.
+
+ api_sgci@1.0.0 dev
+> nodemon server.js
+
+[nodemon] 3.1.4
+[nodemon] to restart at any time, enter rs
+[nodemon] watching path(s): *.*
+[nodemon] watching extensions: js,mjs,cjs,json
+[nodemon] starting node server.js
+D:\SENA\7\5\3-4\API-SGCI\server.js:17
+Qued
+^
+
+ReferenceError: Qued is not defined
+    at Object.<anonymous> (D:\SENA\7\5\3-4\API-SGCI\server.js:17:1)
+    at Module._compile (node:internal/modules/cjs/loader:1358:14)
+    at Module._extensions..js (node:internal/modules/cjs/loader:1416:10)
+    at Module.load (node:internal/modules/cjs/loader:1208:32)
+    at Module._load (node:internal/modules/cjs/loader:1024:12)
+    at Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:174:12)
+    at node:internal/main/run_main_module:28:49
+
+Node.js v20.14.0
+[nodemon] app crashed - waiting for file changes before starting...
+ChatGPT
+El error indica que hay una referencia a Qued en la línea 17 del archivo server.js. Esto sugiere que hay una línea de código sobrante o mal copiada que contiene Qued.
+
+Vamos a revisar el archivo server.js y eliminar cualquier referencia a Qued. Aquí está el archivo corregido:
+
+javascript
+Copiar código
+console.log('hola mundo soy pedro');
+const express = require('express');
+const conectarDB = require('./config/db');
+const authRoutes = require('./routes/authRoutes');
+const productoRoutes = require('./routes/productosRoutes'); // Asegúrate de que este archivo existe
+
+// Conectar a la base de datos
+conectarDB();
+
+// Crear una instancia de Express
+const app = express();
+
+// Middleware para analizar el cuerpo de las solicitudes
+app.use(express.json());
+
+// Usar las rutas de autenticación
+app.use('/api/auth', authRoutes);
+
+// Usar las rutas de productos
+app.use('/api/productos', productoRoutes); // Asegúrate de que esta ruta es correcta
+
+// Definir una ruta de prueba
+app.get('/', (req, res) => {
+  res.send('Hola mundo: ADSO 2024');
+});
+
+// Configurar el puerto en el que escuchará el servidor
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en el puerto ${PORT}`);
+});
+Pasos a seguir
+Abre el archivo server.js en tu editor de código.
+Elimina cualquier referencia a Qued. Asegúrate de que el archivo se vea exactamente como el código anterior.
+Guarda el archivo.
+Reinicia el servidor utilizando nodemon o node.
+Ejecuta el comando:
+
+sh
+Copiar código
+nodemon server.js
+o
+
+sh
+Copiar código
+node server.js
+Esto debería resolver el error. Si el problema persiste, asegúrate de revisar nuevamente el archivo para cualquier otra referencia no definida o errónea.
+
+Instrucciones
+Tomando como referencia, la clase pasada, el tutorial y lo visto
+en el componente formativo “Construcción de API” realizar el
+diseño y la codificación del proyecto.
+✓ Elaborar el código de al menos dos módulos de su proyecto
+(Ejemplo: CRUD productos, CRUD Pedidos), estos deben
+integrarse entre si, incluyendo el módulo Login.
+✓ El código debe contener comentarios
+✓ Se debe crear el proyecto utilizando herramientas de
+versionamiento GIT y GITHUB.
+Lineamientos para la entrega del producto:
+ChatGPT
+Para este proyecto, necesitas diseñar y codificar dos módulos de tu API, integrarlos con un módulo de autenticación (login), y usar Git y GitHub para el versionamiento del código. Aquí tienes una guía para ayudarte a cumplir con estos requisitos:
+
+Pasos a seguir:
+Estructura del Proyecto:
+
+Crear una estructura de carpetas para el proyecto.
+Configurar el entorno del proyecto con npm y crear archivos de configuración necesarios.
+Implementar el Módulo de Autenticación:
+
+Crear rutas para el registro y el login.
+Implementar la generación y verificación de tokens JWT.
+Implementar los Módulos CRUD:
+
+Crear las rutas, controladores y modelos para productos y pedidos.
+Implementar las operaciones básicas de CRUD (Crear, Leer, Actualizar, Eliminar) para cada módulo.
+Integrar todo:
+
+Asegurarse de que todos los módulos están integrados y funcionan correctamente.
+Proteger las rutas de productos y pedidos con el middleware de autenticación.
+Versionamiento con Git y GitHub:
+
+Inicializar un repositorio Git y hacer commits frecuentes.
+Subir el proyecto a GitHub.
+Estructura del Proyecto:
+plaintext
+Copiar código
+project/
+│
+├── controllers/
+│   ├── authController.js
+│   ├── productosController.js
+│   └── pedidosController.js
+│
+├── middleware/
+│   └── authMiddleware.js
+│
+├── models/
+│   ├── User.js
+│   ├── Producto.js
+│   └── Pedido.js
+│
+├── routes/
+│   ├── authRoutes.js
+│   ├── productosRoutes.js
+│   └── pedidosRoutes.js
+│
+├── config/
+│   └── db.js
+│
+├── server.js
+│
+└── package.json
+Paso 1: Inicializar el Proyecto
+sh
+Copiar código
+mkdir project
+cd project
+npm init -y
+npm install express mongoose bcryptjs jsonwebtoken joi
+npm install nodemon --save-dev
+Paso 2: Conectar a la Base de Datos (config/db.js)
+javascript
+Copiar código
+const mongoose = require('mongoose');
+
+const conectarDB = async () => {
+  try {
+    await mongoose.connect('mongodb://localhost:27017/mi_base_de_datos', {
+      useNewUrlParser: true,
+      useUnifiedTopology: true,
+      useCreateIndex: true,
+    });
+    console.log('Base de datos conectada');
+  } catch (error) {
+    console.error('Error al conectar a la base de datos');
+    process.exit(1); // Detener la aplicación
+  }
+};
+
+module.exports = conectarDB;
+Paso 3: Modelo de Usuario (models/User.js)
+javascript
+Copiar código
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+const UserSchema = new mongoose.Schema({
+  username: {
+    type: String,
+    required: true,
+    minlength: 3,
+    maxlength: 50
+  },
+  email: {
+    type: String,
+    required: true,
+    unique: true,
+    match: /^\S+@\S+\.\S+$/
+  },
+  password: {
+    type: String,
+    required: true,
+    minlength: 6
+  },
+  role: {
+    type: String,
+    enum: ['usuario', 'admin', 'vendedor'],
+    default: 'usuario'
+  }
+});
+
+// Encriptar contraseña antes de guardar
+UserSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) return next();
+  const salt = await bcrypt.genSalt(10);
+  this.password = await bcrypt.hash(this.password, salt);
+  next();
+});
+
+module.exports = mongoose.model('User', UserSchema);
+Paso 4: Controlador de Autenticación (controllers/authController.js)
+javascript
+Copiar código
+const bcrypt = require('bcryptjs');
+const Joi = require('joi');
+const User = require('../models/User');
+const jwt = require('jsonwebtoken');
+
+// Esquemas de validación
+const registerSchema = Joi.object({
+  username: Joi.string().min(3).max(50).required(),
+  email: Joi.string().email().required(),
+  password: Joi.string().min(6).required()
+});
+
+const loginSchema = Joi.object({
+  email: Joi.string().email().required(),
+  password: Joi.string().min(6).required()
+});
+
+exports.register = async (req, res) => {
+  const { error } = registerSchema.validate(req.body);
+  if (error) return res.status(400).json({ error: error.details[0].message });
+
+  const { username, email, password } = req.body;
+
+  try {
+    let user = await User.findOne({ email });
+    if (user) return res.status(400).json({ error: 'El usuario ya existe' });
+
+    user = new User({ username, email, password });
+    await user.save();
+    res.status(201).json({ mensaje: 'Usuario registrado exitosamente' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+};
+
+exports.login = async (req, res) => {
+  const { error } = loginSchema.validate(req.body);
+  if (error) return res.status(400).json({ error: error.details[0].message });
+
+  const { email, password } = req.body;
+
+  try {
+    const user = await User.findOne({ email });
+    if (!user) return res.status(400).json({ error: 'Credenciales inválidas' });
+
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) return res.status(400).json({ error: 'Credenciales inválidas' });
+
+    const token = jwt.sign({ userId: user._id }, 'your_jwt_secret', { expiresIn: '1h' });
+    res.status(200).json({ mensaje: 'Inicio de sesión exitoso', token });
+  } catch (error) {
+    res.status(500).json({ error: 'Error del servidor' });
+  }
+};
+Paso 5: Middleware de Autenticación (middleware/authMiddleware.js)
+javascript
+Copiar código
+const jwt = require('jsonwebtoken');
+const User = require('../models/User');
+
+const authMiddleware = async (req, res, next) => {
+  try {
+    const authHeader = req.header('Authorization');
+    if (!authHeader) return res.status(401).json({ mensaje: 'Acceso denegado, no hay token proporcionado' });
+
+    const token = authHeader.replace('Bearer ', '');
+    const decoded = jwt.verify(token, 'your_jwt_secret');
+
+    const user = await User.findById(decoded.userId);
+    if (!user) return res.status(401).json({ mensaje: 'Usuario no encontrado' });
+
+    req.user = user;
+    next();
+  } catch (error) {
+    res.status(401).json({ mensaje: 'Token inválido o expirado' });
+  }
+};
+
+module.exports = authMiddleware;
+Paso 6: Modelo de Producto (models/Producto.js)
+javascript
+Copiar código
+const mongoose = require('mongoose');
+
+const ProductoSchema = new mongoose.Schema({
+  nombre: {
+    type: String,
+    required: true
+  },
+  descripcion: {
+    type: String,
+    required: true
+  },
+  precio: {
+    type: Number,
+    required: true
+  },
+  stock: {
+    type: Number,
+    required: true
+  }
+});
+
+module.exports = mongoose.model('Producto', ProductoSchema);
+Paso 7: Modelo de Pedido (models/Pedido.js)
+javascript
+Copiar código
+const mongoose = require('mongoose');
+
+const PedidoSchema = new mongoose.Schema({
+  productos: [{
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Producto',
+    required: true
+  }],
+  total: {
+    type: Number,
+    required: true
+  },
+  usuario: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    required: true
+  }
+});
+
+module.exports = mongoose.model('Pedido', PedidoSchema);
+Paso 8: Controlador de Productos (controllers/productosController.js)
+javascript
+Copiar código
+const Producto = require('../models/Producto');
+
+exports.crearProducto = async (req, res) => {
+  try {
+    const producto = new Producto(req.body);
+    await producto.save();
+    res.status(201).json(producto);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al crear producto' });
+  }
+};
+
+exports.obtenerProductos = async (req, res) => {
+  try {
+    const productos = await Producto.find();
+    res.status(200).json(productos);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener productos' });
+  }
+};
+
+exports.actualizarProducto = async (req, res) => {
+  try {
+    const producto = await Producto.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!producto) return res.status(404).json({ error: 'Producto no encontrado' });
+    res.status(200).json(producto);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar producto' });
+  }
+};
+
+exports.eliminarProducto = async (req, res) => {
+  try {
+    const producto = await Producto.findByIdAndDelete(req.params.id);
+    if (!producto) return res.status(404).json({ error: 'Producto no encontrado' });
+    res.status(200).json({ mensaje: 'Producto eliminado' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar producto' });
+  }
+};
+Paso 9: Controlador de Pedidos (controllers/pedidosController.js)
+javascript
+Copiar código
+const Pedido = require('../models/Pedido');
+
+exports.crearPedido = async (req, res) => {
+  try {
+    const pedido = new Pedido({ ...req.body, usuario: req.user._id });
+    await pedido.save();
+    res.status(201).json(pedido);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al crear pedido' });
+  }
+};
+
+exports.obtenerPedidos = async (req, res) => {
+  try {
+    const pedidos = await Pedido.find({ usuario: req.user._id }).populate('productos');
+    res.status(200).json(pedidos);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al obtener pedidos' });
+  }
+};
+
+exports.actualizarPedido = async (req, res) => {
+  try {
+    const pedido = await Pedido.findByIdAndUpdate(req.params.id, req.body, { new: true });
+    if (!pedido) return res.status(404).json({ error: 'Pedido no encontrado' });
+    res.status(200).json(pedido);
+  } catch (error) {
+    res.status(500).json({ error: 'Error al actualizar pedido' });
+  }
+};
+
+exports.eliminarPedido = async (req, res) => {
+  try {
+    const pedido = await Pedido.findByIdAndDelete(req.params.id);
+    if (!pedido) return res.status(404).json({ error: 'Pedido no encontrado' });
+    res.status(200).json({ mensaje: 'Pedido eliminado' });
+  } catch (error) {
+    res.status(500).json({ error: 'Error al eliminar pedido' });
+  }
+};
+Paso 10: Rutas de Autenticación (routes/authRoutes.js)
+javascript
+Copiar código
+const express = require('express');
+const { register, login } = require('../controllers/authController');
+
+const router = express.Router();
+
+router.post('/register', register);
+router.post('/login', login);
+
+module.exports = router;
+Paso 11: Rutas de Productos (routes/productosRoutes.js)
+javascript
+Copiar código
+const express = require('express');
+const { crearProducto, obtenerProductos, actualizarProducto, eliminarProducto } = require('../controllers/productosController');
+const authMiddleware = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+router.post('/', authMiddleware, crearProducto);
+router.get('/', obtenerProductos);
+router.put('/:id', authMiddleware, actualizarProducto);
+router.delete('/:id', authMiddleware, eliminarProducto);
+
+module.exports = router;
+Paso 12: Rutas de Pedidos (routes/pedidosRoutes.js)
+javascript
+Copiar código
+const express = require('express');
+const { crearPedido, obtenerPedidos, actualizarPedido, eliminarPedido } = require('../controllers/pedidosController');
+const authMiddleware = require('../middleware/authMiddleware');
+
+const router = express.Router();
+
+router.post('/', authMiddleware, crearPedido);
+router.get('/', authMiddleware, obtenerPedidos);
+router.put('/:id', authMiddleware, actualizarPedido);
+router.delete('/:id', authMiddleware, eliminarPedido);
+
+module.exports = router;
+Paso 13: Configurar el Servidor (server.js)
+javascript
+Copiar código
+const express = require('express');
+const conectarDB = require('./config/db');
+const authRoutes = require('./routes/authRoutes');
+const productosRoutes = require('./routes/productosRoutes');
+const pedidosRoutes = require('./routes/pedidosRoutes');
+
+// Conectar a la base de datos
+conectarDB();
+
+// Crear una instancia de Express
+const app = express();
+
+// Middleware para analizar el cuerpo de las solicitudes
+app.use(express.json());
+
+// Usar las rutas
+app.use('/api/auth', authRoutes);
+app.use('/api/productos', productosRoutes);
+app.use('/api/pedidos', pedidosRoutes);
+
+// Definir una ruta de prueba
+app.get('/', (req, res) => {
+  res.send('Hola mundo: ADSO 2024');
+});
+
+// Configurar el puerto en el que escuchará el servidor
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en el puerto ${PORT}`);
+});
+Paso 14: Versionamiento con Git y GitHub
+Inicializar un repositorio Git:
+sh
+Copiar código
+git init
+git add .
+git commit -m "Initial commit"
+Crear un repositorio en GitHub y subir el proyecto:
+sh
+Copiar código
+git remote add origin https://github.com/tu_usuario/tu_repositorio.git
+git branch -M main
+git push -u origin main
+Testing con Postman
+1. Registro de Usuario
+Método: POST
+URL: http://localhost:5000/api/auth/register
+Body (JSON):
+json
+Copiar código
+{
+  "username": "testuser",
+  "email": "testuser@example.com",
+  "password": "password123"
+}
+2. Login de Usuario
+Método: POST
+URL: http://localhost:5000/api/auth/login
+Body (JSON):
+json
+Copiar código
+{
+  "email": "testuser@example.com",
+  "password": "password123"
+}
+3. Crear Producto
+Método: POST
+URL: http://localhost:5000/api/productos
+Headers:
+plaintext
+Copiar código
+Authorization: Bearer <tu_token_jwt>
+Body (JSON):
+json
+Copiar código
+{
+  "nombre": "Producto 1",
+  "descripcion": "Descripción del producto 1",
+  "precio": 100,
+  "stock": 10
+}
+4. Obtener Productos
+Método: GET
+URL: http://localhost:5000/api/productos
+5. Actualizar Producto
+Método: PUT
+URL: http://localhost:5000/api/productos/<id_del_producto>
+Headers:
+plaintext
+Copiar código
+Authorization: Bearer <tu_token_jwt>
+Body (JSON):
+json
+Copiar código
+{
+  "nombre": "Producto 1 Actualizado",
+  "descripcion": "Descripción del producto 1 actualizada",
+  "precio": 120,
+  "stock": 5
+}
+6. Eliminar Producto
+Método: DELETE
+URL: http://localhost:5000/api/productos/<id_del_producto>
+Headers:
+plaintext
+Copiar código
+Authorization: Bearer <tu_token_jwt>
+7. Crear Pedido
+Método: POST
+URL: http://localhost:5000/api/pedidos
+Headers:
+plaintext
+Copiar código
+Authorization: Bearer <tu_token_jwt>
+Body (JSON):
+json
+Copiar código
+{
+  "productos": ["<id_del_producto>"],
+  "total": 120
+}
+8. Obtener Pedidos
+Método: GET
+URL: http://localhost:5000/api/pedidos
+Headers:
+plaintext
+Copiar código
+Authorization: Bearer <tu_token_jwt>
+9. Actualizar Pedido
+Método: PUT
+URL: http://localhost:5000/api/pedidos/<id_del_pedido>
+Headers:
+plaintext
+Copiar código
+Authorization: Bearer <tu_token_jwt>
+Body (JSON):
+json
+Copiar código
+{
+  "total": 150
+}
+10. Eliminar Pedido
+Método: DELETE
+URL: http://localhost:5000/api/pedidos/<id_del_pedido>
+Headers:
+plaintext
+Copiar código
+Authorization: Bearer <tu_token_jwt>
+
+
+Documentación con Pantallazos
+
+
+Registro de Usuario: Captura de pantalla de la petición y respuesta en Postman.
+Login de Usuario: Captura de pantalla de la petición y respuesta en Postman, incluyendo el token recibido.
+Crear Producto: Captura de pantalla de la petición con el token en los headers y la respuesta en Postman.
+Obtener Productos: Captura de pantalla de la petición y respuesta en Postman.
+Actualizar Producto: Captura de pantalla de la petición con el token en los headers y la respuesta en Postman.
+Eliminar Producto: Captura de pantalla de la petición con el token en los headers y la respuesta en Postman.
+Crear Pedido: Captura de pantalla de la petición con el token en los headers y la respuesta en Postman.
+Obtener Pedidos: Captura de pantalla de la petición con el token en los headers y la respuesta en Postman.
+Actualizar Pedido: Captura de pantalla de la petición con el token en los headers y la respuesta en Postman.
+Eliminar Pedido: Captura de pantalla de la petición con el token en los headers y la respuesta en Postman.
+Con esto, habrás completado el proyecto, realizado el testing con Postman y documentado el proceso con capturas de pantalla. Asegúrate de que cada paso esté correctamente documentado y que todos los pantallazos sean claros y legibles.
+
+de lo anterior explicame, brevemente cada función del código, así como su conexión entre archivos para lo siguiente
+Registro de Usuario:
+Login de Usuario:
+Crear Producto:
+Obtener Productos:
+Actualizar Producto:
+Crear Pedido:
+Obtener Pedidos:
+Actualizar Pedido:
+Eliminar Pedido:
+
+
+
+
+Registro de Usuario:
+Función: register en controllers/authController.js
+
+Descripción: Esta función valida los datos de registro (nombre de usuario, correo electrónico y contraseña) usando Joi. Luego verifica si el usuario ya existe en la base de datos. Si no existe, crea un nuevo usuario con los datos proporcionados y guarda el usuario en la base de datos.
+Conexión:
+La ruta POST /api/auth/register en routes/authRoutes.js llama a esta función.
+La validación de datos se realiza con Joi.
+La encriptación de la contraseña se hace con bcryptjs.
+Se utiliza el modelo User para interactuar con la base de datos.
+Login de Usuario:
+Función: login en controllers/authController.js
+
+Descripción: Esta función valida las credenciales de inicio de sesión (correo electrónico y contraseña) usando Joi. Busca al usuario en la base de datos y verifica que la contraseña proporcionada coincida con la almacenada. Si las credenciales son correctas, genera un token JWT que se usa para autenticar futuras solicitudes.
+Conexión:
+La ruta POST /api/auth/login en routes/authRoutes.js llama a esta función.
+La validación de datos se realiza con Joi.
+La comparación de contraseñas se hace con bcryptjs.
+La generación del token JWT se hace con jsonwebtoken.
+El modelo User se usa para buscar al usuario en la base de datos.
+Crear Producto:
+Función: crearProducto en controllers/productosController.js
+
+Descripción: Esta función crea un nuevo producto en la base de datos usando los datos proporcionados en la solicitud.
+Conexión:
+La ruta POST /api/productos en routes/productosRoutes.js llama a esta función.
+Se utiliza el middleware authMiddleware para proteger esta ruta, asegurando que solo usuarios autenticados puedan crear productos.
+El modelo Producto se usa para interactuar con la base de datos.
+Obtener Productos:
+Función: obtenerProductos en controllers/productosController.js
+
+Descripción: Esta función obtiene todos los productos de la base de datos y los devuelve en la respuesta.
+Conexión:
+La ruta GET /api/productos en routes/productosRoutes.js llama a esta función.
+El modelo Producto se usa para obtener los productos de la base de datos.
+Actualizar Producto:
+Función: actualizarProducto en controllers/productosController.js
+
+Descripción: Esta función actualiza un producto existente en la base de datos con los datos proporcionados en la solicitud.
+Conexión:
+La ruta PUT /api/productos/:id en routes/productosRoutes.js llama a esta función.
+Se utiliza el middleware authMiddleware para proteger esta ruta, asegurando que solo usuarios autenticados puedan actualizar productos.
+El modelo Producto se usa para encontrar y actualizar el producto en la base de datos.
+Crear Pedido:
+Función: crearPedido en controllers/pedidosController.js
+
+Descripción: Esta función crea un nuevo pedido en la base de datos usando los datos proporcionados en la solicitud, incluyendo los productos y el usuario que realiza el pedido.
+Conexión:
+La ruta POST /api/pedidos en routes/pedidosRoutes.js llama a esta función.
+Se utiliza el middleware authMiddleware para proteger esta ruta, asegurando que solo usuarios autenticados puedan crear pedidos.
+El modelo Pedido se usa para interactuar con la base de datos.
+Obtener Pedidos:
+Función: obtenerPedidos en controllers/pedidosController.js
+
+Descripción: Esta función obtiene todos los pedidos del usuario autenticado y los devuelve en la respuesta.
+Conexión:
+La ruta GET /api/pedidos en routes/pedidosRoutes.js llama a esta función.
+Se utiliza el middleware authMiddleware para proteger esta ruta, asegurando que solo usuarios autenticados puedan obtener sus pedidos.
+El modelo Pedido se usa para obtener los pedidos del usuario autenticado desde la base de datos.
+Actualizar Pedido:
+Función: actualizarPedido en controllers/pedidosController.js
+
+Descripción: Esta función actualiza un pedido existente en la base de datos con los datos proporcionados en la solicitud.
+Conexión:
+La ruta PUT /api/pedidos/:id en routes/pedidosRoutes.js llama a esta función.
+Se utiliza el middleware authMiddleware para proteger esta ruta, asegurando que solo usuarios autenticados puedan actualizar pedidos.
+El modelo Pedido se usa para encontrar y actualizar el pedido en la base de datos.
+Eliminar Pedido:
+Función: eliminarPedido en controllers/pedidosController.js
+
+Descripción: Esta función elimina un pedido existente de la base de datos.
+Conexión:
+La ruta DELETE /api/pedidos/:id en routes/pedidosRoutes.js llama a esta función.
+Se utiliza el middleware authMiddleware para proteger esta ruta, asegurando que solo usuarios autenticados puedan eliminar pedidos.
+El modelo Pedido se usa para encontrar y eliminar el pedido de la base de datos.
+Estas funciones están organizadas en diferentes archivos para mantener una estructura modular y clara. Los controladores manejan la lógica de negocio, los modelos interactúan con la base de datos y las rutas definen los endpoints de la API. El middleware de autenticación se usa para proteger rutas que requieren que el usuario esté autenticado.
+
+eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJ1c2VySWQiOiI2NjdmYTJhMWE2ZjhiYzVkM2M4MDZlMzMiLCJpYXQiOjE3MjA2MjU3NjQsImV4cCI6MTcyMDY5Nzc2NH0.sdDQ1ie35ydUumqs8O31gsN40-i4xidRS4EJaY_Rtsk
+{
+ "cliente": "667fa2a1a6f8bc5d3c806e33",
+ "pedido": [
+ {
+ "producto": "668dcf239dd0b2718fefd9dc",
+ "cantidad": 1
+ },
+ {
+ "producto": " 668dd5e19dd0b2718fefd9e0",
+ "cantidad": 2
+ }
+ ],
+ "total": 378.70,
+ "paymentCode":505050,
+ "nombreEnvio": "Jhonatan",
+ "telefonoEnvio": "3120000000",
+ "direccionEnvio": "calle 2-2-22",
+ "barrioEnvio": "La Riviera",
+ "municipioEnvio": "San GIL",
+ "departamentoEnvio": "Santander"
+}
+
+
+{
+    "username": "pedro",
+    "email": "pinpao92@gmail.com",
+    "password": "123456"
+ }
+
+
+http://localhost:5000/api/auth/register
+http://localhost:5000/api/auth/login
+URL: http://localhost:5000/api/auth/protected
+http://localhost:5000/api/auth/update
+http://localhost:5000/api/productos
+
+realiza una explicación detallada de las funciones, métodos de array y demás conceptos utilizados en cada función mencionada:
+
+
+Enlaces que utilizaremos para probar nuestro modulo con postman:
+A. Crear un Nuevo Producto:
+POST: http://localhost:5000/api/productos
+B. Mostrar Todos los Productos:
+GET: http://localhost:5000/api/productos
+C. Mostrar un Producto por su ID:
+GET: http://localhost:5000/api/productos/:idProducto
+D. Actualizar un Producto:
+PUT: http://localhost:5000/api/productos/:idProducto
+E. Eliminar un Producto:
+DELETE: http://localhost:5000/api/productos/:idProducto
+F. Buscar Productos:
+POST: http://localhost:5000/api/productos/busqueda/:
+
+Ahora vamos a trabajar con las siguientes rutas en postman.
+I. Crear un Nuevo Pedido:
+POST: http://localhost:5000/api/pedidos/nuevo
+II. Mostrar Todos los Pedidos:
+GET: http://localhost:5000/api/pedidos
+III. Mostrar un Pedido por su ID:
+GET: http://localhost:5000/api/pedidos/:idPedido
+IV. Actualizar un Pedido:
+PUT: http://localhost:5000/api/pedidos/:idPedido
+V. Eliminar un Pedido:
+DELETE: http://localhost:5000/api/pedidos/:idPedido
+
+
+
+Registro de Usuario:
+Función: register en controllers/authController.js
+
+Validación con Joi:
+
+Joi.object crea un esquema de validación para el objeto de entrada.
+Joi.string().min().max().required() valida que los campos sean cadenas de texto con longitudes específicas y sean obligatorios.
+Joi.string().email().required() valida que el campo sea un correo electrónico válido y obligatorio.
+Interacción con la base de datos:
+
+User.findOne busca un usuario en la base de datos que coincida con el correo electrónico proporcionado.
+User es el modelo de Mongoose para la colección de usuarios en la base de datos.
+Encriptación de contraseñas:
+
+bcrypt.hash encripta la contraseña del usuario antes de guardarla en la base de datos.
+Guardado del usuario:
+
+user.save guarda el nuevo usuario en la base de datos.
+Login de Usuario:
+Función: login en controllers/authController.js
+
+Validación con Joi:
+
+Joi.object crea un esquema de validación para las credenciales de inicio de sesión.
+Joi.string().email().required() valida que el campo de correo electrónico sea válido y obligatorio.
+Joi.string().min().required() valida que el campo de contraseña tenga una longitud mínima y sea obligatorio.
+Interacción con la base de datos:
+
+User.findOne busca un usuario en la base de datos que coincida con el correo electrónico proporcionado.
+Comparación de contraseñas:
+
+bcrypt.compare compara la contraseña proporcionada con la contraseña encriptada almacenada en la base de datos.
+Generación de token JWT:
+
+jwt.sign genera un token JWT que contiene el ID del usuario y tiene una validez de 1 hora.
+Crear Producto:
+Función: crearProducto en controllers/productosController.js
+
+Interacción con la base de datos:
+
+Producto.create crea un nuevo producto en la base de datos con los datos proporcionados en la solicitud.
+Protección de ruta con middleware:
+
+authMiddleware se usa para verificar que el usuario esté autenticado antes de permitir la creación de un producto.
+Obtener Productos:
+Función: obtenerProductos en controllers/productosController.js
+
+Interacción con la base de datos:
+Producto.find obtiene todos los productos de la base de datos y los devuelve en la respuesta.
+Actualizar Producto:
+Función: actualizarProducto en controllers/productosController.js
+
+Interacción con la base de datos:
+
+Producto.findByIdAndUpdate busca un producto por su ID y lo actualiza con los nuevos datos proporcionados en la solicitud.
+Protección de ruta con middleware:
+
+authMiddleware se usa para verificar que el usuario esté autenticado antes de permitir la actualización de un producto.
+Crear Pedido:
+Función: crearPedido en controllers/pedidosController.js
+
+Interacción con la base de datos:
+
+Pedido.create crea un nuevo pedido en la base de datos con los datos proporcionados en la solicitud.
+Protección de ruta con middleware:
+
+authMiddleware se usa para verificar que el usuario esté autenticado antes de permitir la creación de un pedido.
+Obtener Pedidos:
+Función: obtenerPedidos en controllers/pedidosController.js
+
+Interacción con la base de datos:
+
+Pedido.find obtiene todos los pedidos del usuario autenticado desde la base de datos y los devuelve en la respuesta.
+Protección de ruta con middleware:
+
+authMiddleware se usa para verificar que el usuario esté autenticado antes de permitir la obtención de pedidos.
+Actualizar Pedido:
+Función: actualizarPedido en controllers/pedidosController.js
+
+Interacción con la base de datos:
+
+Pedido.findByIdAndUpdate busca un pedido por su ID y lo actualiza con los nuevos datos proporcionados en la solicitud.
+Protección de ruta con middleware:
+
+authMiddleware se usa para verificar que el usuario esté autenticado antes de permitir la actualización de un pedido.
+Eliminar Pedido:
+Función: eliminarPedido en controllers/pedidosController.js
+
+Interacción con la base de datos:
+
+Pedido.findByIdAndDelete busca un pedido por su ID y lo elimina de la base de datos.
+Protección de ruta con middleware:
+
+authMiddleware se usa para verificar que el usuario esté autenticado antes de permitir la eliminación de un pedido.
+
+
+
+
+
+
+
+Explicación Detallada de Funciones y Métodos
+Vamos a desglosar las funciones y métodos utilizados en cada una de las rutas que mencionaste, explicando cómo se manejan los arrays, los métodos de Mongoose, y otros conceptos relevantes en cada una.
+
+Rutas de Productos
+A. Crear un Nuevo Producto:
+POST: http://localhost:5000/api/productos
+
+Función: crearProducto en productosController.js
+Descripción: Esta función se encarga de crear un nuevo producto en la base de datos utilizando los datos proporcionados en la solicitud.
+Métodos Utilizados:
+req.body: Accede a los datos enviados en la solicitud.
+new Producto(req.body): Crea una nueva instancia del modelo Producto con los datos de la solicitud.
+await producto.save(): Guarda el nuevo producto en la base de datos.
+B. Mostrar Todos los Productos:
+GET: http://localhost:5000/api/productos
+
+Función: obtenerProductos en productosController.js
+Descripción: Esta función obtiene todos los productos almacenados en la base de datos y los devuelve en la respuesta.
+Métodos Utilizados:
+await Producto.find(): Recupera todos los documentos del modelo Producto de la base de datos.
+res.json(productos): Envía la lista de productos en formato JSON como respuesta.
+C. Mostrar un Producto por su ID:
+GET: http://localhost:5000/api/productos/:idProducto
+
+Función: obtenerProducto en productosController.js
+Descripción: Esta función obtiene un producto específico por su ID.
+Métodos Utilizados:
+req.params.idProducto: Obtiene el ID del producto de los parámetros de la URL.
+await Producto.findById(idProducto): Busca un producto por su ID en la base de datos.
+res.json(producto): Envía el producto encontrado en formato JSON como respuesta.
+D. Actualizar un Producto:
+PUT: http://localhost:5000/api/productos/:idProducto
+
+Función: actualizarProducto en productosController.js
+Descripción: Esta función actualiza un producto existente en la base de datos con los datos proporcionados en la solicitud.
+Métodos Utilizados:
+req.params.idProducto: Obtiene el ID del producto de los parámetros de la URL.
+req.body: Accede a los datos enviados en la solicitud.
+await Producto.findByIdAndUpdate(idProducto, req.body, { new: true }): Actualiza el producto en la base de datos y devuelve el documento actualizado.
+res.json(producto): Envía el producto actualizado en formato JSON como respuesta.
+E. Eliminar un Producto:
+DELETE: http://localhost:5000/api/productos/:idProducto
+
+Función: eliminarProducto en productosController.js
+Descripción: Esta función elimina un producto existente de la base de datos.
+Métodos Utilizados:
+req.params.idProducto: Obtiene el ID del producto de los parámetros de la URL.
+await Producto.findByIdAndDelete(idProducto): Elimina el producto de la base de datos.
+res.json({ mensaje: 'Producto eliminado' }): Envía un mensaje de confirmación en formato JSON como respuesta.
+F. Buscar Productos:
+POST: http://localhost:5000/api/productos/busqueda/:query
+
+Función: buscarProducto en productosController.js
+Descripción: Esta función busca productos en la base de datos que coincidan con un término de búsqueda.
+Métodos Utilizados:
+req.params.query: Obtiene el término de búsqueda de los parámetros de la URL.
+new RegExp(query, 'i'): Crea una expresión regular para realizar una búsqueda insensible a mayúsculas y minúsculas.
+await Producto.find({ nombre: new RegExp(query, 'i') }): Busca productos cuyo nombre coincida con el término de búsqueda.
+res.json(productos): Envía los productos encontrados en formato JSON como respuesta.
+Rutas de Pedidos
+I. Crear un Nuevo Pedido:
+POST: http://localhost:5000/api/pedidos/nuevo
+
+Función: crearPedido en pedidosController.js
+Descripción: Esta función se encarga de crear un nuevo pedido en la base de datos utilizando los datos proporcionados en la solicitud.
+Métodos Utilizados:
+req.body: Accede a los datos enviados en la solicitud.
+new Pedido(req.body): Crea una nueva instancia del modelo Pedido con los datos de la solicitud.
+await pedido.save(): Guarda el nuevo pedido en la base de datos.
+res.json(pedido): Envía el pedido creado en formato JSON como respuesta.
+II. Mostrar Todos los Pedidos:
+GET: http://localhost:5000/api/pedidos
+
+Función: obtenerPedidos en pedidosController.js
+Descripción: Esta función obtiene todos los pedidos almacenados en la base de datos y los devuelve en la respuesta.
+Métodos Utilizados:
+await Pedido.find(): Recupera todos los documentos del modelo Pedido de la base de datos.
+res.json(pedidos): Envía la lista de pedidos en formato JSON como respuesta.
+III. Mostrar un Pedido por su ID:
+GET: http://localhost:5000/api/pedidos/:idPedido
+
+Función: obtenerPedido en pedidosController.js
+Descripción: Esta función obtiene un pedido específico por su ID.
+Métodos Utilizados:
+req.params.idPedido: Obtiene el ID del pedido de los parámetros de la URL.
+await Pedido.findById(idPedido): Busca un pedido por su ID en la base de datos.
+res.json(pedido): Envía el pedido encontrado en formato JSON como respuesta.
+IV. Actualizar un Pedido:
+PUT: http://localhost:5000/api/pedidos/:idPedido
+
+Función: actualizarPedido en pedidosController.js
+Descripción: Esta función actualiza un pedido existente en la base de datos con los datos proporcionados en la solicitud.
+Métodos Utilizados:
+req.params.idPedido: Obtiene el ID del pedido de los parámetros de la URL.
+req.body: Accede a los datos enviados en la solicitud.
+await Pedido.findByIdAndUpdate(idPedido, req.body, { new: true }): Actualiza el pedido en la base de datos y devuelve el documento actualizado.
+res.json(pedido): Envía el pedido actualizado en formato JSON como respuesta.
+V. Eliminar un Pedido:
+DELETE: http://localhost:5000/api/pedidos/:idPedido
+
+Función: eliminarPedido en pedidosController.js
+Descripción: Esta función elimina un pedido existente de la base de datos.
+Métodos Utilizados:
+req.params.idPedido: Obtiene el ID del pedido de los parámetros de la URL.
+await Pedido.findByIdAndDelete(idPedido): Elimina el pedido de la base de datos.
+res.json({ mensaje: 'Pedido eliminado' }): Envía un mensaje de confirmación en formato JSON como respuesta.
+Métodos y Conceptos Utilizados
+Mongoose:
+
+find(): Recupera documentos de la base de datos.
+findById(id): Busca un documento por su ID.
+findByIdAndUpdate(id, data, options): Actualiza un documento por su ID.
+findByIdAndDelete(id): Elimina un documento por su ID.
+save(): Guarda un nuevo documento en la base de datos.
+Express:
+
+req.params: Accede a los parámetros de la URL.
+req.body: Accede a los datos del cuerpo de la solicitud.
+res.json(data): Envía una respuesta en formato JSON.
+res.status(code).json(data): Envía una respuesta en formato JSON con un código de estado HTTP específico.
+JWT (JSON Web Token):
+
+Utilizado para la autenticación y autorización de las rutas protegidas.
+Validación:
+
+Joi o cualquier otra librería de validación para verificar y sanitizar los datos de entrada.
+Búsqueda con Expresiones Regulares:
+
+new RegExp(query, 'i'): Crea una expresión regular para realizar búsquedas insensibles a mayúsculas y minúsculas en la base de datos.
+Uso de Postman para Probar las Rutas
+Para cada una de las rutas mencionadas, puedes configurar Postman de la siguiente manera:
+
+Método: Selecciona el método HTTP apropiado (GET, POST, PUT, DELETE).
+URL: Introduce la URL correspondiente.
+Headers:
+Para rutas protegidas, añade un header Authorization con el valor Bearer <tu_token_jwt>.
+Body:
+Para solicitudes POST y PUT, selecciona raw y JSON y proporciona los datos en formato JSON.
+
+
+
+
+
+https://youtu.be/0hEmKiKj7-A
+https://youtu.be/0hEmKiKj7-A

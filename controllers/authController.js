@@ -52,7 +52,7 @@ const loginSchema = Joi.object({
       const isMatch = await bcrypt.compare(password, user.password);
       if (!isMatch) return res.status(400).json({ error: 'Credenciales inválidas' });
   
-      const token = jwt.sign({ userId: user._id }, 'your_jwt_secret', { expiresIn: '1h' });
+      const token = jwt.sign({ userId: user._id }, 'your_jwt_secret', { expiresIn: '20h' });
   
       res.status(200).json({ mensaje: 'Inicio de sesión exitoso', token });
     } catch (error) {
